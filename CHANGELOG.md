@@ -9,6 +9,7 @@ and this project uses [maintenance-based versioning](TOKENSAVE-VERSIONING.md), n
 
 ### Documentation
 
+- Fork guide: add the default whole-file read of `tokensave_read`, a Cursor job with a shell in a folder that you choose, an audit of the log that shows whether an agent used the graph, and the limits of `hook-pre-tool-use`.
 - Fork guide: add the approvals and the tool limits for headless Codex and Cursor, the `cargo` path with Homebrew's rustup, the comments lost from Codex's `config.toml`, and the upload counter.
 
 - Require agents to verify linked PR states before closing an issue and summarize merged improvements with the actual destination branch, validation, and remaining work; synchronize this rule across master and beta (Refs #803).
