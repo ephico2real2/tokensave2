@@ -259,16 +259,28 @@ are `tokensave_more` and the 73 tools that declare `readOnlyHint` in 7.16.0.
 Merge these entries into the file. Keep the keys that are already there.
 
 Leave out the 13 tools that do not declare `readOnlyHint`, because they edit files, record session data or operate
-tests: `delete_symbol`, `insert_at`, `insert_at_symbol`, `multi_str_replace`, `record_code_area`, `record_decision`,
-`rename`, `replace_lines`, `replace_symbol`, `run_affected_tests`, `session_end`, `session_start` and `str_replace`,
-each with the prefix `tokensave_`. With this list, a headless call to `tokensave_str_replace` is refused and the file
-does not change. `Mcp(tokensave:*)` also allows those tools.
+tests. Each name below has the prefix `tokensave_`.
 
-**The tools that a headless agent can call.** By default the server lists 12 tools, 10 of them read tools. `cursor-agent`
-and `codex exec` could not call any other tool in these tests, also after a call to `tokensave_more`. To list every tool,
-set `TOKENSAVE_TOOLS` to `full` in the `env` of the server. The README gives about 89 KB of schema for each turn, so keep
-the default if the 10 read tools are sufficient. In the tests with `full`, `tokensave_node` reached the server from both
-agents, and Cursor still refused `tokensave_replace_lines`.
+```text
+delete_symbol  insert_at  insert_at_symbol  multi_str_replace  record_code_area  record_decision  rename
+replace_lines  replace_symbol  run_affected_tests  session_end  session_start  str_replace
+```
+
+With this list, a headless call to `tokensave_str_replace` is refused, and the file does not change.
+`Mcp(tokensave:*)` also allows those tools.
+
+**The tools that a headless agent can call.** By default the server lists 12 tools, 10 of them read tools. After a call
+to `tokensave_more`, the server sends `notifications/tools/list_changed`. By default, `cursor-agent` and `codex exec` do
+not act on it, so the other tools stay out of reach. Reports of this client limit are on the
+[Cursor forum](https://forum.cursor.com/t/mcp-notifications-tools-list-changed-not-acted-on-mid-session/161459) and in
+[openai/codex #37417](https://github.com/openai/codex/issues/37417). There are two ways past it:
+
+- Set `TOKENSAVE_TOOLS` to `full` in the `env` of the server. Both agents then reached `tokensave_node`, and Cursor still
+  refused `tokensave_replace_lines`. The README gives about 89 KB of schema for each turn.
+- For Codex only, add `-c 'features.mcp_tool_list_changed=true'`. `tokensave_node` then reached the server after
+  `tokensave_more`. `codex features list` shows this feature as under development, and off by default.
+
+If the 10 read tools are sufficient, keep the default.
 
 If the server is in `~/.cursor/mcp.json`, Cursor needs no extra flag. If the server is in a project `.cursor/mcp.json`,
 approve it once for each folder, with `--approve-mcps` or `cursor-agent mcp enable tokensave`. Cursor keeps the approval
@@ -328,7 +340,7 @@ Copy these files before the switch, because `uninstall` and `install` write them
 | `User rejected MCP: tokensave-tokensave_search` (Cursor CLI) | Add the allow entries (step 8). The server name in the entry must agree with `mcp.json`. |
 | `MCP tool call requires approval, but approval policy is never` (Codex) | Add the approval for that server's tools (step 8). |
 | `MCP server does not exist: tokensave`, with a project `.cursor/mcp.json` | Approve the server once for this folder (step 8). |
-| `Tool tokensave-tokensave_node was not found` (Cursor CLI), or `MCP tool tokensave_node is not available` (Codex) | The server lists only its core tools. Use a core tool, or set `TOKENSAVE_TOOLS` to `full` (step 8). |
+| `Tool tokensave-tokensave_node was not found` (Cursor CLI), or `MCP tool tokensave_node is not available` (Codex) | The agent has only the core tools. Use a core tool, or use one of the two ways in step 8. |
 | `command not found: cargo` | Homebrew's rustup is keg-only. Use the `PATH` form in step 1. |
 | `rules text drifted` from `tokensave doctor` | An upstream build ran. Run `~/.cargo/bin/tokensave doctor`. |
 
