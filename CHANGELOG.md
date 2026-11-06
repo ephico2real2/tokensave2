@@ -7,6 +7,10 @@ and this project uses [maintenance-based versioning](TOKENSAVE-VERSIONING.md), n
 
 ## [Unreleased]
 
+### Fixed
+
+- **A call with `graph_root` now reaches the savings ledger, under the selected project.** An agent in an empty folder or a disposable clone must name the project with `graph_root`, so none of its calls reached the ledger or the dashboard. The call still stays out of the session counter and debt, the schema charge, the monitor and the worldwide count, and it writes nothing to the selected graph. A call that names several roots stays out of the ledger.
+
 ### Documentation
 
 - Fork guide: add the approvals and the tool limits for headless Codex and Cursor, the `cargo` path with Homebrew's rustup, the comments lost from Codex's `config.toml`, and the upload counter.

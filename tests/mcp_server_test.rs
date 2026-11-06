@@ -2103,7 +2103,7 @@ async fn test_index_age_warning_dedup_and_zero_hit_suppression() {
 }
 
 #[tokio::test]
-async fn selected_calls_skip_all_accounting_and_preserve_local_schema_charge() {
+async fn selected_calls_reach_only_the_selected_ledger_and_preserve_local_schema_charge() {
     let Some(home) = std::env::var_os("TOKENSAVE_SELECTED_ACCOUNTING_HOME") else {
         let home = TempDir::new().unwrap();
         let mut command = ProcessCommand::new(std::env::current_exe().unwrap());
@@ -2112,7 +2112,7 @@ async fn selected_calls_skip_all_accounting_and_preserve_local_schema_charge() {
                 "--exact",
                 &qualified_test_name(
                     module_path!(),
-                    "selected_calls_skip_all_accounting_and_preserve_local_schema_charge",
+                    "selected_calls_reach_only_the_selected_ledger_and_preserve_local_schema_charge",
                 ),
                 "--nocapture",
             ])
@@ -2183,14 +2183,16 @@ async fn selected_calls_skip_all_accounting_and_preserve_local_schema_charge() {
     );
     assert_eq!(
         server.accounting_tasks_started(),
-        accounting_started_before,
-        "selected call must not spawn global ledger persistence"
+        accounting_started_before + 1,
+        "selected call must spawn one global ledger write"
     );
-    assert_eq!(
-        server.accounting_tasks_pending(),
-        accounting_pending_before,
-        "selected call must not leave accounting work pending"
+    assert!(
+        server
+            .wait_for_accounting_idle(std::time::Duration::from_secs(5))
+            .await,
+        "selected ledger persistence did not drain"
     );
+    assert_eq!(server.accounting_tasks_pending(), accounting_pending_before);
     assert_eq!(
         server
             .cg()
@@ -2200,14 +2202,17 @@ async fn selected_calls_skip_all_accounting_and_preserve_local_schema_charge() {
             .unwrap(),
         local_tokens_before
     );
-    assert_eq!(global.sum_savings(None, 0).await.calls, total_ledger_before);
+    let total_ledger_after_selected = global.sum_savings(None, 0).await.calls;
+    assert_eq!(total_ledger_after_selected, total_ledger_before + 1);
     assert_eq!(
         global.sum_savings(Some(&local_path), 0).await.calls,
-        local_ledger_before
+        local_ledger_before,
+        "a selected call belongs to the selected project, not to the local one"
     );
     assert_eq!(
         global.sum_savings(Some(&foreign_path), 0).await.calls,
-        foreign_ledger_before
+        foreign_ledger_before + 1,
+        "a selected call must be recorded under the selected project"
     );
     assert_eq!(monitor_snapshot(&home), monitor_before);
 
@@ -2241,7 +2246,7 @@ async fn selected_calls_skip_all_accounting_and_preserve_local_schema_charge() {
         "local ledger persistence did not drain"
     );
     assert!(
-        global.sum_savings(None, 0).await.calls > total_ledger_before,
+        global.sum_savings(None, 0).await.calls > total_ledger_after_selected,
         "later local calls must increase the global ledger total"
     );
     assert!(

@@ -235,6 +235,22 @@ fn quote_inert_value(value: &str) -> String {
         .replace('`', "\\u0060")
 }
 
+/// Approximate tokens of the text in a tool response: the bytes of its
+/// `content` text, over four.
+fn content_text_tokens(value: &Value) -> u64 {
+    value
+        .get("content")
+        .and_then(|c| c.as_array())
+        .map_or(0, |arr| {
+            let total_bytes: usize = arr
+                .iter()
+                .filter_map(|item| item.get("text").and_then(|t| t.as_str()))
+                .map(str::len)
+                .sum();
+            (total_bytes / 4) as u64
+        })
+}
+
 fn format_selected_fallback_guidance(root: &str, branch: Option<&str>) -> String {
     let root = quote_inert_value(root);
     let guidance = branch.map_or_else(
@@ -2711,9 +2727,8 @@ impl McpServer {
         };
 
         // Federation (#376). Handled before the single-graph pipeline because
-        // it runs that pipeline once per root and merges. Selected calls are
-        // already outside savings accounting (#363), so an early return here
-        // loses nothing a single-root selected call would have recorded.
+        // it runs that pipeline once per root and merges. A federated call stays
+        // outside the savings ledger, because no one project owns its answer.
         if let Some(selection) = selection.as_ref() {
             if selection.is_federated() {
                 if !FEDERATABLE_TOOLS.contains(&tool_name) {
@@ -2903,10 +2918,12 @@ impl McpServer {
                         );
                     }
 
+                    let tool_response_tokens = content_text_tokens(&result.value);
+
                     // Selected graphs are read-only and intentionally skip
-                    // all local repair, accounting, and current-project
-                    // warnings. Only warnings recorded by the selected graph
-                    // itself are relevant to this response.
+                    // all local repair, session accounting, and
+                    // current-project warnings. Only warnings recorded by the
+                    // selected graph itself are relevant to this response.
                     if selected.cg.fallback_warning().is_some() {
                         let warning = format_selected_fallback_warning(selected);
                         if let Some(content) = result
@@ -2977,6 +2994,30 @@ impl McpServer {
                     }
 
                     crate::memstats::record(tool_name);
+
+                    // The ledger keeps savings per project, and it is outside
+                    // the selected project, so this row keeps that graph
+                    // read-only. Everything else stays local: the session's
+                    // counter, debt and schema charge, the monitor, and the
+                    // worldwide count. `before` uses the selected graph's own
+                    // file sizes, because the cached map holds only the
+                    // default project's.
+                    let full_file_tokens: u64 = if result.touched_files.is_empty() {
+                        0
+                    } else {
+                        let sizes = selected.cg.get_file_token_map().await.unwrap_or_default();
+                        result
+                            .touched_files
+                            .iter()
+                            .filter_map(|path| sizes.get(path.as_str()))
+                            .sum()
+                    };
+                    self.persist_savings(
+                        selected.provenance_root.clone(),
+                        tool_name,
+                        cap_baseline(baseline, full_file_tokens, tool_response_tokens),
+                        content_text_tokens(&result.value) + request_overhead,
+                    );
                     return JsonRpcResponse::success(id, result.value);
                 }
 
@@ -2990,18 +3031,7 @@ impl McpServer {
                 // so a large staleness banner can't loosen the cap on a
                 // `Reference` tool's savings — the cap should track what the
                 // *answer* delivered, not incidental warning text.
-                let tool_response_tokens: u64 = result
-                    .value
-                    .get("content")
-                    .and_then(|c| c.as_array())
-                    .map_or(0, |arr| {
-                        let total_bytes: usize = arr
-                            .iter()
-                            .filter_map(|item| item.get("text").and_then(|t| t.as_str()))
-                            .map(str::len)
-                            .sum();
-                        (total_bytes / 4) as u64
-                    });
+                let tool_response_tokens = content_text_tokens(&result.value);
 
                 // Prepend version-update warning + queue logging notification.
                 if let Some(warning) = self.check_version_update().await {
@@ -3184,18 +3214,7 @@ impl McpServer {
                 // they were attached (the original bug) left `after`
                 // understating real cost and `saved` correspondingly
                 // inflated.
-                let full_response_tokens: u64 = result
-                    .value
-                    .get("content")
-                    .and_then(|c| c.as_array())
-                    .map_or(0, |arr| {
-                        let total_bytes: usize = arr
-                            .iter()
-                            .filter_map(|item| item.get("text").and_then(|t| t.as_str()))
-                            .map(str::len)
-                            .sum();
-                        (total_bytes / 4) as u64
-                    });
+                let full_response_tokens = content_text_tokens(&result.value);
 
                 // `after`: everything the model actually paid for this call —
                 // the full response text (answer + any banners), the request
@@ -3323,32 +3342,12 @@ impl McpServer {
                     }
                 }
 
-                // Persist to the cross-project savings ledger (best-effort, non-blocking).
-                {
-                    let project_path_str = cg.project_root().to_string_lossy().to_string();
-                    let tool_name_owned = tool_name.to_string();
-                    let ts = crate::tokensave::current_timestamp();
-                    #[cfg(feature = "test-transport")]
-                    let accounting_tasks_pending = {
-                        self.accounting_tasks_started.fetch_add(1, Ordering::AcqRel);
-                        self.accounting_tasks_pending.fetch_add(1, Ordering::AcqRel);
-                        Arc::clone(&self.accounting_tasks_pending)
-                    };
-                    tokio::spawn(async move {
-                        #[cfg(feature = "test-transport")]
-                        let _guard = AccountingTaskGuard(accounting_tasks_pending);
-                        if let Some(gdb) = crate::global_db::GlobalDb::open().await {
-                            gdb.record_savings(
-                                &project_path_str,
-                                &tool_name_owned,
-                                before_tokens,
-                                after_tokens,
-                                ts,
-                            )
-                            .await;
-                        }
-                    });
-                }
+                self.persist_savings(
+                    cg.project_root().to_string_lossy().to_string(),
+                    tool_name,
+                    before_tokens,
+                    after_tokens,
+                );
 
                 JsonRpcResponse::success(id, result.value)
             }
@@ -3365,6 +3364,33 @@ impl McpServer {
                 format!("tool execution failed: {e}"),
             ),
         }
+    }
+
+    /// Persists one row to the cross-project savings ledger (best-effort,
+    /// non-blocking).
+    fn persist_savings(
+        &self,
+        project_path: String,
+        tool_name: &str,
+        before_tokens: u64,
+        after_tokens: u64,
+    ) {
+        let tool_name = tool_name.to_string();
+        let ts = crate::tokensave::current_timestamp();
+        #[cfg(feature = "test-transport")]
+        let accounting_tasks_pending = {
+            self.accounting_tasks_started.fetch_add(1, Ordering::AcqRel);
+            self.accounting_tasks_pending.fetch_add(1, Ordering::AcqRel);
+            Arc::clone(&self.accounting_tasks_pending)
+        };
+        tokio::spawn(async move {
+            #[cfg(feature = "test-transport")]
+            let _guard = AccountingTaskGuard(accounting_tasks_pending);
+            if let Some(gdb) = crate::global_db::GlobalDb::open().await {
+                gdb.record_savings(&project_path, &tool_name, before_tokens, after_tokens, ts)
+                    .await;
+            }
+        });
     }
 
     /// Returns the current server runtime statistics as a JSON value.
