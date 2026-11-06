@@ -313,6 +313,104 @@ ps -axo command= | grep '[t]okensave serve'
 These commands were tested on 2026-11-06 with Codex CLI 0.166.0 and Cursor CLI 2026.11.05-86047df. No query was tested
 from Copilot.
 
+**Ask for a slice of a file.** If you give `tokensave_read` no `mode`, it reads the whole file. The server stops each
+answer at 15,000 characters and writes `[... truncated at 15000 chars]`. On a file of 927 lines and 69,921 bytes, the
+answer stopped at line 234. The agent paid for a large read and saw only the start. Pass `mode` `lines`, `map` or
+`signatures`, or call `tokensave_body` for one symbol. Add this rule to the brief of each headless agent.
+
+**Give a Cursor job a shell.** A headless Cursor call refuses each shell command that is
+not in `permissions.allow`, also `echo hello`. Do not add shell commands one by one, and do not use `--force`. Download
+[`cursor-job-config.py`](https://github.com/ephico2real2/diagram-kit/blob/main/skill/tokensave-fork/cursor-job-config.py)
+from diagram-kit, and operate it once. Operate it again after each change to the allow list, because it makes a copy.
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/ephico2real2/diagram-kit/main/skill/tokensave-fork/cursor-job-config.py
+python3 cursor-job-config.py
+```
+
+The script copies `~/.cursor/cli-config.json` to `~/.cursor-jobs`, with `sandbox.readBoundary` set to `workspace` and
+with no account data. It also links `mcp.json` and `hooks.json`. Each job then selects that folder and names its own
+folders:
+
+```sh
+CURSOR_CONFIG_DIR=~/.cursor-jobs cursor-agent -p --trust --sandbox enabled --workspace <job folder> \
+  --add-dir <report folder> --output-format stream-json "$(cat prompt.txt)" > job.jsonl
+```
+
+| Action in the job | Result |
+|---|---|
+| `git`, `python3` and `rg` in the job folder | Ran with no prompt |
+| Native write tool in the job folder | Wrote the file, with no `--force` |
+| Shell write and read in the `--add-dir` folder | Worked |
+| Shell write outside these folders | `Operation not permitted`, and no file |
+| `cat` and `rg` on the indexed project | `Operation not permitted` |
+| Native read of the indexed project | `Permission denied` |
+| `tokensave_read` and `tokensave_search` on the indexed project | Answered |
+
+Do not set `sandbox.readBoundary` in `~/.cursor/cli-config.json`. A plain call with no sandbox then also got `Permission
+denied` outside its folder, so that setting limits each Cursor session. A plain call with the main file still reads the
+whole project, so a job needs both the variable and the flag.
+
+`CURSOR_CONFIG_DIR` does not change the MCP server of a job. A server in that folder did not start, and a server in
+`.cursor/mcp.json` of the workspace did, with `--approve-mcps`. Without that file, the job uses `~/.cursor/mcp.json`.
+
+Put a disposable clone in the job folder, because the agent can read and test only there. A symlink that points out of
+the folder is not tested. In a pipe, the exit status does not show a refusal: `cat <file> | wc -c` exits 0 and prints 0,
+so read stderr. `curl https://example.com` was refused with the sandbox and no read boundary. This setup does not give
+network access, and a way to grant it is not tested.
+
+**Prove that the agent uses the graph and reads slices.** The test above names the tool, so it proves only that the tool
+answers. A call to `tokensave_read` also proves nothing alone, because of its default mode. To see what an agent does
+with an open question, read its log.
+
+1. Choose a symbol in an indexed file of more than 15,000 characters, and find the answer yourself.
+2. Put the rules of your brief and one open question in `prompt.txt`. Name no tool in the question. For example:
+   `What does <Class.method> in <file> do, and which code calls it? Answer in three sentences. Change no file.`
+3. Operate each agent from an empty folder, so that each read of the project must name its root.
+4. Audit each log with
+   [`tool-use-audit.py`](https://github.com/ephico2real2/diagram-kit/blob/main/skill/tokensave-fork/tool-use-audit.py),
+   and compare the answer of the agent with yours. The audit shows how the agent read, and not whether it is correct.
+5. Ask the agent to call `tokensave_read` with only `file` and `graph_root`, and audit that log too. The audit must
+   print FAIL. If it prints PASS, the test proves nothing.
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/ephico2real2/diagram-kit/main/skill/tokensave-fork/tool-use-audit.py
+CURSOR_CONFIG_DIR=~/.cursor-jobs cursor-agent -p --trust --sandbox enabled --workspace "$PWD" \
+  --output-format stream-json "$(cat prompt.txt)" > cursor.jsonl
+codex exec --json --sandbox workspace-write --skip-git-repo-check -C "$PWD" - < prompt.txt > codex.jsonl
+python3 tool-use-audit.py cursor.jsonl --root /path/to/project
+python3 tool-use-audit.py codex.jsonl --root /path/to/project
+```
+
+For a Claude agent, operate `claude -p --output-format stream-json --verbose "$(cat prompt.txt)" < /dev/null > claude.jsonl`.
+The audit reads these JSON streams and the transcript of a Claude subagent, and not the session files in
+`~/.codex/sessions`. A PASS needs an answer from a tool
+that reads code, no `tokensave_read` in mode `full`, and no slices that cover a whole file. It also needs no shell
+reader such as `rg` or `cat` that names the root, and no native read inside the root. These are the results for the file
+above:
+
+| Run | Audit | Log |
+|---|---|---|
+| Codex, open question | PASS | 7 graph calls, 1 shell call that read no code, 47 of 927 lines of the file |
+| Cursor, open question | PASS | 7 graph calls, no shell call, 20 of 927 lines of the file |
+| Cursor job in its own folder, open question | PASS | 5 graph calls, no shell call |
+| Claude, `claude -p`, open question, first run | FAIL | Tokensave, 26 of 927 lines of the file, and `grep -n` through Bash |
+| Claude, `claude -p`, open question, second run | PASS | 4 graph calls answered, no shell call, 20 of 927 lines of the file |
+| Claude, `tokensave_read` with no `mode` | FAIL | 15,298 characters, cut at line 234 |
+| Claude, told to operate `rg`, `cat` and its Read tool | FAIL | All ran, and `cat` reached all 69,921 bytes |
+| Codex and Cursor, `tokensave_read` with no `mode` | FAIL | 15,298 characters, cut at line 234 |
+| Codex, told to operate `rg` and `cat` | FAIL | Both ran, and `cat` returned all 69,921 bytes |
+| Cursor, told to use its native read | FAIL | The read succeeded, on the whole file |
+
+Each row is one run, so the passes show that an agent can follow the brief, and they do not show a rate. If you repeat
+an agent's recorded test and it uses `rg`, install it first with `brew install ripgrep`. Tokensave does not need it.
+
+**What holds an agent to the graph.** The job folder holds a Cursor job. For Codex, only the brief and the audit do so,
+because `cat` can still read a whole file. The hook `hook-pre-tool-use` is not sufficient by itself. Pipe `rg <name>
+src` to the hook from a folder in the project: a name in the index gets `deny`, and a name that is not gets `allow`.
+From an empty folder, each name gets `allow`. Cursor's `hooks.json` names this hook, but `rg` still ran in one Cursor
+job with the project as its workspace. The cause is not proved. Codex names no such hook.
+
 **What the switch in step 2 changes.** A comparison before and after the switch on one Mac gave these results:
 
 - In the Codex, Cursor, Copilot CLI and VS Code MCP files, only the `command` of tokensave changed.
