@@ -226,7 +226,8 @@ fi
 
 echo
 echo "Run these to point those agents at the fork. tokensave's entries (MCP server,"
-echo "hooks, rules) are removed and written again; the rest of each config stays."
+echo "hooks, rules) are removed and written again; the rest of each config stays,"
+echo "except comments in Codex's config.toml and VS Code's mcp.json."
 echo
 for agent in $to_switch; do
     echo "\"$fork\" uninstall --agent $agent --keep-git-hooks"

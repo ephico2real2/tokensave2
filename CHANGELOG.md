@@ -9,6 +9,8 @@ and this project uses [maintenance-based versioning](TOKENSAVE-VERSIONING.md), n
 
 ### Documentation
 
+- Fork guide: add the approvals and the tool limits for headless Codex and Cursor, the `cargo` path with Homebrew's rustup, the comments lost from Codex's `config.toml`, and the upload counter.
+
 - Require agents to verify linked PR states before closing an issue and summarize merged improvements with the actual destination branch, validation, and remaining work; synchronize this rule across master and beta (Refs #803).
 
 - Add a linked table of contents near the top of the README.

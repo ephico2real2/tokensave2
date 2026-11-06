@@ -31,6 +31,13 @@ cargo install --locked --path .
 Run `cargo install` from inside the checkout. rustup picks the toolchain from `rust-toolchain.toml` in the
 current folder, not from `--path`. The binary goes to `~/.cargo/bin/tokensave`.
 
+If Homebrew installed rustup, the shell can print `command not found: cargo`, because that formula is keg-only. Run
+`cargo` from the toolchain folder. `ls ~/.rustup/toolchains` gives the name of the folder for your platform.
+
+```sh
+PATH="$HOME/.rustup/toolchains/1.98.1-aarch64-apple-darwin/bin:$PATH" cargo install --locked --path .
+```
+
 ## 2. Point your shell and your agents at the fork
 
 An upstream tokensave (Homebrew, a release download) can stay installed. It usually comes first on `PATH`, and the
@@ -50,7 +57,8 @@ It changes no file. It prints what it found and the commands to run, in two part
   binary the configs of Claude Code, Codex, Cursor and Copilot name. For each one still naming another install,
   it prints `uninstall --agent <agent> --keep-git-hooks` and one `install --agent ... --git-hook no`, run with the
   fork. tokensave's entries (MCP server, hooks, rules) are removed and written again, and the rest of each config
-  stays, except comments in VS Code's `mcp.json`: tokensave writes that file back without them.
+  stays, except comments in Codex's `config.toml` and VS Code's `mcp.json`: tokensave writes those files back without
+  them.
 
 `tokensave reinstall` alone isn't enough. It keeps an MCP server command that still works (upstream #161,
 `preserve_mcp_command` in `src/agents/mod.rs`), so an MCP entry that names Homebrew's binary keeps naming it, and
@@ -93,6 +101,9 @@ The Claude Code Stop hook records Claude Code turns as you work. Codex, Pi and D
 `tokensave cost`, `status` and `monitor`. Run one of them to bring those up to date.
 
 The backfill is needed once. It never changes a token count or a cost, and a second run changes nothing.
+
+Like upstream, the fork uploads a count of saved tokens to a worldwide counter, and prints a note about it. To opt
+out, run `tokensave disable-upload-counter`. The README's privacy table says what the upload sends.
 
 ## 5. Cursor usage
 
@@ -142,10 +153,162 @@ cargo install --locked --path .
 tokensave dashboard stop && tokensave dashboard start
 ```
 
-A `--path` install always rebuilds and replaces the binary. Then restart your agent sessions.
+A `--path` install always rebuilds and replaces the binary. If `cargo` is not found, use the `PATH` form in step 1.
+Then restart your agent sessions.
 
 **Don't run `tokensave upgrade`.** It downloads the latest upstream release and writes it over the binary that ran
 it, which replaces the fork.
+
+## 8. Use the graph tools from a headless agent
+
+A headless agent operates one prompt, and no person is present to approve a tool. `tokensave install` registers the
+MCP server, but that does not give every call an approval. With no approval, the tool stays in the agent's list and
+each call fails. The error does not mean that the server is down.
+
+| Agent | Where the approval goes | Written by `tokensave install` | Error with no approval |
+|---|---|---|---|
+| Codex | `~/.codex/config.toml` | Yes, for tokensave | `MCP tool call requires approval, but approval policy is never` |
+| Cursor CLI | `permissions.allow` in `~/.cursor/cli-config.json` | No | `User rejected MCP: tokensave-tokensave_search` |
+
+**Cursor CLI.** Add one entry for each read tool. The name before the colon is the server name in `mcp.json`. These
+are `tokensave_more` and the 73 tools that declare `readOnlyHint` in 7.16.0.
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Mcp(tokensave:tokensave_affected)",
+      "Mcp(tokensave:tokensave_ambiguous_calls)",
+      "Mcp(tokensave:tokensave_annotations)",
+      "Mcp(tokensave:tokensave_blame)",
+      "Mcp(tokensave:tokensave_body)",
+      "Mcp(tokensave:tokensave_branch_diff)",
+      "Mcp(tokensave:tokensave_branch_list)",
+      "Mcp(tokensave:tokensave_branch_search)",
+      "Mcp(tokensave:tokensave_by_qualified_name)",
+      "Mcp(tokensave:tokensave_call_chain)",
+      "Mcp(tokensave:tokensave_callees)",
+      "Mcp(tokensave:tokensave_callers)",
+      "Mcp(tokensave:tokensave_callers_for)",
+      "Mcp(tokensave:tokensave_changelog)",
+      "Mcp(tokensave:tokensave_circular)",
+      "Mcp(tokensave:tokensave_commit_context)",
+      "Mcp(tokensave:tokensave_complexity)",
+      "Mcp(tokensave:tokensave_config)",
+      "Mcp(tokensave:tokensave_constructors)",
+      "Mcp(tokensave:tokensave_context)",
+      "Mcp(tokensave:tokensave_coupling)",
+      "Mcp(tokensave:tokensave_dead_code)",
+      "Mcp(tokensave:tokensave_dependencies)",
+      "Mcp(tokensave:tokensave_dependency_depth)",
+      "Mcp(tokensave:tokensave_derives)",
+      "Mcp(tokensave:tokensave_diagnose)",
+      "Mcp(tokensave:tokensave_diagnostics)",
+      "Mcp(tokensave:tokensave_diff)",
+      "Mcp(tokensave:tokensave_diff_context)",
+      "Mcp(tokensave:tokensave_distribution)",
+      "Mcp(tokensave:tokensave_doc)",
+      "Mcp(tokensave:tokensave_doc_coverage)",
+      "Mcp(tokensave:tokensave_dsm)",
+      "Mcp(tokensave:tokensave_entities)",
+      "Mcp(tokensave:tokensave_field_sites)",
+      "Mcp(tokensave:tokensave_file_dependents)",
+      "Mcp(tokensave:tokensave_files)",
+      "Mcp(tokensave:tokensave_find_exact_symbol)",
+      "Mcp(tokensave:tokensave_gini)",
+      "Mcp(tokensave:tokensave_god_class)",
+      "Mcp(tokensave:tokensave_health)",
+      "Mcp(tokensave:tokensave_hotspots)",
+      "Mcp(tokensave:tokensave_impact)",
+      "Mcp(tokensave:tokensave_implementations)",
+      "Mcp(tokensave:tokensave_impls)",
+      "Mcp(tokensave:tokensave_imports)",
+      "Mcp(tokensave:tokensave_inheritance_depth)",
+      "Mcp(tokensave:tokensave_largest)",
+      "Mcp(tokensave:tokensave_log)",
+      "Mcp(tokensave:tokensave_module_api)",
+      "Mcp(tokensave:tokensave_more)",
+      "Mcp(tokensave:tokensave_node)",
+      "Mcp(tokensave:tokensave_port_order)",
+      "Mcp(tokensave:tokensave_port_status)",
+      "Mcp(tokensave:tokensave_pr_context)",
+      "Mcp(tokensave:tokensave_rank)",
+      "Mcp(tokensave:tokensave_read)",
+      "Mcp(tokensave:tokensave_recursion)",
+      "Mcp(tokensave:tokensave_redundancy)",
+      "Mcp(tokensave:tokensave_runtime)",
+      "Mcp(tokensave:tokensave_search)",
+      "Mcp(tokensave:tokensave_session_recall)",
+      "Mcp(tokensave:tokensave_signature)",
+      "Mcp(tokensave:tokensave_signature_search)",
+      "Mcp(tokensave:tokensave_similar)",
+      "Mcp(tokensave:tokensave_simplify_scan)",
+      "Mcp(tokensave:tokensave_status)",
+      "Mcp(tokensave:tokensave_test_coverage)",
+      "Mcp(tokensave:tokensave_test_map)",
+      "Mcp(tokensave:tokensave_test_risk)",
+      "Mcp(tokensave:tokensave_todos)",
+      "Mcp(tokensave:tokensave_type_hierarchy)",
+      "Mcp(tokensave:tokensave_unsafe_patterns)",
+      "Mcp(tokensave:tokensave_unused_imports)"
+    ]
+  }
+}
+```
+
+Merge these entries into the file. Keep the keys that are already there.
+
+Leave out the 13 tools that do not declare `readOnlyHint`, because they edit files, record session data or operate
+tests: `delete_symbol`, `insert_at`, `insert_at_symbol`, `multi_str_replace`, `record_code_area`, `record_decision`,
+`rename`, `replace_lines`, `replace_symbol`, `run_affected_tests`, `session_end`, `session_start` and `str_replace`,
+each with the prefix `tokensave_`. With this list, a headless call to `tokensave_str_replace` is refused and the file
+does not change. `Mcp(tokensave:*)` also allows those tools.
+
+**The tools that a headless agent can call.** By default the server lists 12 tools, 10 of them read tools. `cursor-agent`
+and `codex exec` could not call any other tool in these tests, also after a call to `tokensave_more`. To list every tool,
+set `TOKENSAVE_TOOLS` to `full` in the `env` of the server. The README gives about 89 KB of schema for each turn, so keep
+the default if the 10 read tools are sufficient. In the tests with `full`, `tokensave_node` reached the server from both
+agents, and Cursor still refused `tokensave_replace_lines`.
+
+If the server is in `~/.cursor/mcp.json`, Cursor needs no extra flag. If the server is in a project `.cursor/mcp.json`,
+approve it once for each folder, with `--approve-mcps` or `cursor-agent mcp enable tokensave`. Cursor keeps the approval
+for that folder, in `mcp-approvals.json` under `~/.cursor/projects/`.
+
+**Codex, with another MCP server.** Each server that tokensave did not install needs its own entries. This example is
+for one CodeGraph tool. Add one table for each tool.
+
+```toml
+[mcp_servers.codegraph.tools.codegraph_search]
+approval_mode = "approve"
+```
+
+**Prove it with a real query.** Operate this from an empty folder, as an agent in a disposable clone does. Replace
+`/path/to/project` with the absolute path of a project that has `.tokensave/`. The server can start with no default
+project, so each call names the project with `graph_root`.
+
+```sh
+P='Call the MCP tool tokensave_search with query "main" and graph_root "/path/to/project". Use no other tool. Print the file path of the first result, or the exact error.'
+cursor-agent -p --trust --workspace "$PWD" "$P"
+printf %s "$P" | codex exec --sandbox workspace-write --skip-git-repo-check -C "$PWD" -
+```
+
+While a test is in operation, this command shows the binary that started:
+
+```sh
+ps -axo command= | grep '[t]okensave serve'
+```
+
+These commands were tested on 2026-11-06 with Codex CLI 0.166.0 and Cursor CLI 2026.11.05-86047df. No query was tested
+from Copilot.
+
+**What the switch in step 2 changes.** A comparison before and after the switch on one Mac gave these results:
+
+- In the Codex, Cursor, Copilot CLI and VS Code MCP files, only the `command` of tokensave changed.
+- Cursor's `cli-config.json` and `hooks.json` did not change, and the approvals for other servers stayed.
+- In `~/.codex/AGENTS.md`, the rules block moved to a lower position in the file.
+- Tokensave left its own `~/.codex/config.toml.bak`.
+
+Copy these files before the switch, because `uninstall` and `install` write them again.
 
 ## Troubleshooting
 
@@ -162,6 +325,12 @@ it, which replaces the fork.
 | `No Cursor usage source is set up; nothing was fetched.` | Add `--use-login`, or set an Admin API key (step 5). |
 | `warning: could not refresh tokensave config for: omp.` after `reinstall` | Harmless when OMP isn't installed (step 3). |
 | `grep: #: No such file or directory` (or another command given `#` as an argument) | A command was pasted with a `# comment` into zsh. Paste it without the comment (step 2). |
+| `User rejected MCP: tokensave-tokensave_search` (Cursor CLI) | Add the allow entries (step 8). The server name in the entry must agree with `mcp.json`. |
+| `MCP tool call requires approval, but approval policy is never` (Codex) | Add the approval for that server's tools (step 8). |
+| `MCP server does not exist: tokensave`, with a project `.cursor/mcp.json` | Approve the server once for this folder (step 8). |
+| `Tool tokensave-tokensave_node was not found` (Cursor CLI), or `MCP tool tokensave_node is not available` (Codex) | The server lists only its core tools. Use a core tool, or set `TOKENSAVE_TOOLS` to `full` (step 8). |
+| `command not found: cargo` | Homebrew's rustup is keg-only. Use the `PATH` form in step 1. |
+| `rules text drifted` from `tokensave doctor` | An upstream build ran. Run `~/.cargo/bin/tokensave doctor`. |
 
 ## Going back to upstream
 
