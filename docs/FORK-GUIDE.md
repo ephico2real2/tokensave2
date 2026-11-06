@@ -351,6 +351,9 @@ Do not set `sandbox.readBoundary` in `~/.cursor/cli-config.json`. A plain call w
 denied` outside its folder, so that setting limits each Cursor session. A plain call with the main file still reads the
 whole project, so a job needs both the variable and the flag.
 
+`CURSOR_CONFIG_DIR` does not change the MCP server of a job. A server in that folder did not start, and a server in
+`.cursor/mcp.json` of the workspace did, with `--approve-mcps`. Without that file, the job uses `~/.cursor/mcp.json`.
+
 Put a disposable clone in the job folder, because the agent can read and test only there. A symlink that points out of
 the folder is not tested. In a pipe, the exit status does not show a refusal: `cat <file> | wc -c` exits 0 and prints 0,
 so read stderr. `curl https://example.com` was refused with the sandbox and no read boundary. This setup does not give
@@ -379,7 +382,9 @@ python3 tool-use-audit.py cursor.jsonl --root /path/to/project
 python3 tool-use-audit.py codex.jsonl --root /path/to/project
 ```
 
-The audit reads these JSON streams, and not the session files in `~/.codex/sessions`. A PASS needs an answer from a tool
+For a Claude agent, operate `claude -p --output-format stream-json --verbose "$(cat prompt.txt)" < /dev/null > claude.jsonl`.
+The audit reads these JSON streams and the transcript of a Claude subagent, and not the session files in
+`~/.codex/sessions`. A PASS needs an answer from a tool
 that reads code, no `tokensave_read` in mode `full`, and no slices that cover a whole file. It also needs no shell
 reader such as `rg` or `cat` that names the root, and no native read inside the root. These are the results for the file
 above:
@@ -389,6 +394,10 @@ above:
 | Codex, open question | PASS | 7 graph calls, 1 shell call that read no code, 47 of 927 lines of the file |
 | Cursor, open question | PASS | 7 graph calls, no shell call, 20 of 927 lines of the file |
 | Cursor job in its own folder, open question | PASS | 5 graph calls, no shell call |
+| Claude, `claude -p`, open question, first run | FAIL | Tokensave, 26 of 927 lines of the file, and `grep -n` through Bash |
+| Claude, `claude -p`, open question, second run | PASS | 4 graph calls answered, no shell call, 20 of 927 lines of the file |
+| Claude, `tokensave_read` with no `mode` | FAIL | 15,298 characters, cut at line 234 |
+| Claude, told to operate `rg`, `cat` and its Read tool | FAIL | All ran, and `cat` reached all 69,921 bytes |
 | Codex and Cursor, `tokensave_read` with no `mode` | FAIL | 15,298 characters, cut at line 234 |
 | Codex, told to operate `rg` and `cat` | FAIL | Both ran, and `cat` returned all 69,921 bytes |
 | Cursor, told to use its native read | FAIL | The read succeeded, on the whole file |
