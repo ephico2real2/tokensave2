@@ -139,6 +139,10 @@ pub struct Context {
     pub bind: std::net::IpAddr,
     pub port: u16,
     pub default_range_days: u32,
+    /// How often the server reads new agent logs and the page asks again; 0 is off.
+    pub refresh_seconds: u32,
+    /// [`super::assets::version`] of the page this server embeds.
+    pub page_version: String,
     /// The user's home folder, where the agent tools keep their data.
     pub home: Option<PathBuf>,
     /// Codex's data folder (`CODEX_HOME`, else `~/.codex`).
@@ -154,6 +158,10 @@ pub struct Status {
     pub bind: String,
     pub port: u16,
     pub workspaces: Vec<String>,
+    #[serde(rename = "refreshSeconds")]
+    pub refresh_seconds: u32,
+    #[serde(rename = "pageVersion")]
+    pub page_version: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -461,6 +469,8 @@ pub fn status(ctx: &Context) -> Status {
         port: ctx.port,
         // Workspaces arrive with `tokensave workspace` (inkcast #227, S2).
         workspaces: Vec::new(),
+        refresh_seconds: ctx.refresh_seconds,
+        page_version: ctx.page_version.clone(),
     }
 }
 

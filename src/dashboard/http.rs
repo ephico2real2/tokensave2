@@ -368,6 +368,8 @@ mod tests {
                 bind: IpAddr::from([127, 0, 0, 1]),
                 port: 7311,
                 default_range_days: 30,
+                refresh_seconds: 60,
+                page_version: "test".to_string(),
                 home: None,
                 codex_home: None,
                 now: || 1_793_000_000,

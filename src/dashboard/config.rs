@@ -46,6 +46,8 @@ pub struct DashboardConfig {
     /// The preset range, in days, used when a request names none.
     pub default_range_days: u32,
     pub theme: Theme,
+    /// How often the server reads new agent logs and the page asks again; 0 is off.
+    pub refresh_seconds: u32,
 }
 
 impl Default for DashboardConfig {
@@ -56,6 +58,7 @@ impl Default for DashboardConfig {
             bind: IpAddr::from([127, 0, 0, 1]),
             default_range_days: 30,
             theme: Theme::Dark,
+            refresh_seconds: 60,
         }
     }
 }
@@ -80,6 +83,7 @@ struct Section {
     bind: Option<String>,
     default_range: Option<String>,
     theme: Option<String>,
+    refresh_seconds: Option<i64>,
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
@@ -95,6 +99,15 @@ pub const PRESET_DAYS: [u32; 5] = [7, 30, 45, 60, 90];
 pub fn parse_preset(value: &str) -> Option<u32> {
     let days: u32 = value.strip_suffix('d').unwrap_or(value).parse().ok()?;
     PRESET_DAYS.contains(&days).then_some(days)
+}
+
+/// A refresh interval: 0 is off, and below 5 seconds an ingest could still be running.
+fn parse_refresh(value: &str, source: &str) -> Result<u32, ConfigError> {
+    value
+        .parse::<u32>()
+        .ok()
+        .filter(|seconds| *seconds == 0 || (5..=3600).contains(seconds))
+        .ok_or_else(|| invalid(source, value, "0 (off) or 5-3600 seconds"))
 }
 
 /// The path of `dashboard.toml` in tokensave's data folder `home`.
@@ -160,6 +173,10 @@ impl DashboardConfig {
         if let Some(value) = section.theme {
             config.theme = parse_theme(&value, &in_file("theme"))?;
         }
+        if let Some(value) = section.refresh_seconds {
+            config.refresh_seconds =
+                parse_refresh(&value.to_string(), &in_file("refresh_seconds"))?;
+        }
 
         let from_env = |name: &str| env(name).filter(|value| !value.is_empty());
         if let Some(value) = from_env("TOKENSAVE_DASHBOARD_ENABLED") {
@@ -174,6 +191,9 @@ impl DashboardConfig {
                     ))
                 }
             };
+        }
+        if let Some(value) = from_env("TOKENSAVE_DASHBOARD_REFRESH_SECONDS") {
+            config.refresh_seconds = parse_refresh(&value, "TOKENSAVE_DASHBOARD_REFRESH_SECONDS")?;
         }
         if let Some(value) = from_env("TOKENSAVE_DASHBOARD_PORT") {
             config.port = value
@@ -400,5 +420,36 @@ mod tests {
         let text = std::fs::read_to_string(path_in(home.path())).unwrap();
         let config = resolve(Some(&text), &[], None).unwrap();
         assert_eq!((config.enabled, config.port), (false, 7400));
+    }
+
+    #[test]
+    fn the_refresh_interval_is_a_minute_unless_set_and_stays_in_bounds() {
+        assert_eq!(resolve(None, &[], None).unwrap().refresh_seconds, 60);
+        let from_file = |n: &str| {
+            resolve(
+                Some(&format!("[dashboard]\nrefresh_seconds = {n}\n")),
+                &[],
+                None,
+            )
+        };
+        assert_eq!(from_file("0").unwrap().refresh_seconds, 0);
+        assert_eq!(from_file("5").unwrap().refresh_seconds, 5);
+        assert_eq!(from_file("3600").unwrap().refresh_seconds, 3600);
+        for bad in ["1", "4", "3601", "-1"] {
+            let error = from_file(bad).unwrap_err().0;
+            assert!(error.contains("refresh_seconds"), "{error}");
+        }
+        let env = [("TOKENSAVE_DASHBOARD_REFRESH_SECONDS", "30")];
+        assert_eq!(
+            resolve(Some("[dashboard]\nrefresh_seconds = 90\n"), &env, None)
+                .unwrap()
+                .refresh_seconds,
+            30
+        );
+        let bad = [("TOKENSAVE_DASHBOARD_REFRESH_SECONDS", "soon")];
+        assert!(resolve(None, &bad, None)
+            .unwrap_err()
+            .0
+            .contains("TOKENSAVE_DASHBOARD_REFRESH_SECONDS"));
     }
 }

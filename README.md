@@ -888,6 +888,7 @@ port = 7311              # TOKENSAVE_DASHBOARD_PORT
 bind = "127.0.0.1"       # TOKENSAVE_DASHBOARD_BIND; 127.0.0.1 or ::1, nothing else
 default_range = "30d"    # TOKENSAVE_DASHBOARD_DEFAULT_RANGE; 7d, 30d, 45d, 60d or 90d
 theme = "dark"           # TOKENSAVE_DASHBOARD_THEME; dark, light or auto
+refresh_seconds = 60     # TOKENSAVE_DASHBOARD_REFRESH_SECONDS; 0 (off) or 5-3600
 ```
 
 The page reads a JSON API under `/api/`: `status`, `summary`, `daily`, `mix`, `runs/top`, `runs`, `roles`, `models`, `thinking`, `fallbacks`, `repos`, `savings` and `sources`. Each takes the window as `range=7|30|45|60|90` or `from`/`to` (`YYYY-MM-DD`, UTC days), and the filters it applies among `repo` (the repo's absolute path), `tool` (`Claude Code`, `Codex`, `Cursor`, `Pi`, `Factory Droid`), `model` and `effort`; a value it cannot use is answered with HTTP 400 naming the parameter. A turn whose model has no price counts in the token figures and is counted in `unpricedTurns`, never as $0. The page itself is embedded from `dashboard/dist/` when the binary is built; a binary built without it answers `/` with 503 "dashboard page not built", and the API works the same.

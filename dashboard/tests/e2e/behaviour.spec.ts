@@ -121,3 +121,31 @@ test('a long repo path does not widen the Repo filter or the page', async ({ pag
     await page.getByRole('button', { name: /^Filters · / }).click();
   }
 });
+
+test('a long repo path wraps on the Repos tab, so the page does not scroll sideways', async ({ page }) => {
+  // No hyphen: a browser breaks a path at a hyphen, and a slash is not a break.
+  const path = `/home/you/${'folder/'.repeat(14)}main`;
+  const repos = [{ name: 'main', path, indexed: true, spentTokens: null, savedTokens: null, tools: [], lastActivity: null }];
+  await page.setViewportSize({ width: 390, height: 800 });
+  await openDashboard(page, { search: '?tab=repos', repos });
+  await expect(page.getByText(path)).toBeVisible();
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 800 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+  }
+});
+
+test('the page refreshes with no reload, and reloads itself for a new build', async ({ page }) => {
+  let version = 'one';
+  await page.route('**/api/status', (route) => route.fulfill({ json: { bind: '127.0.0.1', port: 7311, workspaces: [], refreshSeconds: 1, pageVersion: version } }));
+  let navigations = 0;
+  page.on('framenavigated', (frame) => {
+    if (frame === page.mainFrame()) navigations += 1;
+  });
+  const requests = await openDashboard(page, { keepStatusRoute: true });
+  const summaries = () => requests.filter((r) => r.startsWith('/api/summary')).length;
+  await expect.poll(summaries).toBeGreaterThanOrEqual(3);
+  expect(navigations).toBe(1);
+  version = 'two';
+  await expect.poll(() => navigations).toBeGreaterThanOrEqual(2);
+});

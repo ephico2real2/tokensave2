@@ -247,6 +247,27 @@ describe('state', () => {
     expect(ws.value).toBe('');
   });
 
+  it('a link naming a workspace the server does not list falls back to all workspaces', async () => {
+    const calls = mockApi('fixture');
+    open('?workspace=/no/such');
+    await loaded();
+    const ws = screen.getByRole('combobox', { name: /Workspace/ }) as HTMLSelectElement;
+    await waitFor(() => expect(ws.value).toBe(''));
+    expect([...ws.options].map((o) => o.value)).toEqual(['~/gitRepos', '']);
+    await waitFor(() => expect(window.location.search).not.toContain('workspace'));
+    expect(calls.filter((url) => url.includes('workspace='))).toEqual([]);
+  });
+
+  it('a link naming a workspace the server lists keeps it, and asks for it', async () => {
+    const calls = mockApi('fixture');
+    open('?workspace=~/gitRepos');
+    await loaded();
+    const ws = screen.getByRole('combobox', { name: /Workspace/ }) as HTMLSelectElement;
+    expect(ws.value).toBe('~/gitRepos');
+    expect(window.location.search).toContain('workspace=');
+    await waitFor(() => expect(calls.some((url) => url.startsWith('/api/repos') && url.includes('workspace='))).toBe(true));
+  });
+
   it('the theme: Dark by default, remembered, never in the URL', async () => {
     mockApi('fixture');
     open();

@@ -1,10 +1,12 @@
 import type { ComponentChildren } from 'preact';
-import { useEffect, useErrorBoundary, useMemo, useState } from 'preact/hooks';
+import { useEffect, useErrorBoundary, useMemo, useRef, useState } from 'preact/hooks';
 import { modelsApi } from './api/models';
 import type { Scope } from './api/params';
 import { reposApi } from './api/repos';
 import { statusApi } from './api/status';
-import { dataOf, useDataset } from './api/useResource';
+import { useAutoRefresh } from './api/useAutoRefresh';
+import { RefreshContext, dataOf, useDataset } from './api/useResource';
+import { reloadPage } from './reload';
 import { AppHeader } from './components/AppHeader';
 import {
   DEFAULT_THEME,
@@ -36,6 +38,25 @@ export function applyTheme(theme: Theme): void {
 }
 
 export function App() {
+  // The interval comes from /api/status, which is itself a dataset under this provider.
+  const [refreshSeconds, setRefreshSeconds] = useState(0);
+  const refresh = useAutoRefresh(refreshSeconds);
+  return (
+    <RefreshContext.Provider value={refresh}>
+      <Page onRefreshSeconds={setRefreshSeconds} updatedAt={refresh.updatedAt} refreshFailed={refresh.failed} />
+    </RefreshContext.Provider>
+  );
+}
+
+function Page({
+  onRefreshSeconds,
+  updatedAt,
+  refreshFailed,
+}: {
+  onRefreshSeconds: (seconds: number) => void;
+  updatedAt: number | null;
+  refreshFailed: boolean;
+}) {
   const now = Date.now();
   const today = localToday(new Date(now));
   const [state, setState] = useState<UrlState>(() => parseUrlState(window.location.search, today));
@@ -51,21 +72,38 @@ export function App() {
     }
   }, [state]);
 
+  const status = useDataset(statusApi, undefined);
+  const pageVersion = useRef<string | null>(null);
+  const statusData = dataOf(status);
+  useEffect(() => {
+    if (!statusData) return;
+    onRefreshSeconds(statusData.refreshSeconds);
+    // A new build started under this open tab: its script is the old one, so load the new one.
+    if (pageVersion.current !== null && pageVersion.current !== statusData.pageVersion) reloadPage();
+    pageVersion.current = statusData.pageVersion;
+  }, [statusData, onRefreshSeconds]);
+
+  // A workspace counts once the server lists it, so a link naming one this machine doesn't have
+  // falls back to all workspaces, as any other invalid value in the URL does.
+  const workspace = statusData?.workspaces.includes(state.workspace) ? state.workspace : '';
+  useEffect(() => {
+    if (statusData && state.workspace && !workspace) setState((s) => ({ ...s, workspace: '' }));
+  }, [statusData, state.workspace, workspace]);
+
   const scope: Scope = useMemo(
     () => ({
       range: state.range,
       from: state.from,
       to: state.to,
-      workspace: state.workspace,
+      workspace,
       repo: state.repo,
       tool: state.tool,
       model: state.model,
       effort: state.effort,
     }),
-    [state.range, state.from, state.to, state.workspace, state.repo, state.tool, state.model, state.effort],
+    [state.range, state.from, state.to, workspace, state.repo, state.tool, state.model, state.effort],
   );
 
-  const status = useDataset(statusApi, undefined);
   // Filter choices: the repos of the workspace and the models in the range. Their endpoints don't
   // take the repo or model filter, so picking one never shrinks its own list. The Repos and
   // Models tabs draw from these same requests.
@@ -84,6 +122,8 @@ export function App() {
         today={today}
         status={status.resource}
         onRetryStatus={status.retry}
+        updatedAt={updatedAt}
+        refreshFailed={refreshFailed}
         repoOptions={repoOptions}
         modelOptions={modelOptions}
         onTheme={(t) => {

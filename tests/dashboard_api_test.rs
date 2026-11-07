@@ -425,6 +425,8 @@ fn context(fx: &Fixture, port: u16) -> Context {
         bind: std::net::IpAddr::from([127, 0, 0, 1]),
         port,
         default_range_days: 30,
+        refresh_seconds: 60,
+        page_version: "abc".to_string(),
         home: Some(fx.home.clone()),
         codex_home: Some(fx.home.join(".codex")),
         now,
@@ -614,7 +616,13 @@ async fn every_endpoint_answers_in_its_type() {
 
     shape(
         &get_json(port, "/api/status").await,
-        &[("bind", K::Str), ("port", K::Num), ("workspaces", K::Arr)],
+        &[
+            ("bind", K::Str),
+            ("port", K::Num),
+            ("workspaces", K::Arr),
+            ("refreshSeconds", K::Num),
+            ("pageVersion", K::Str),
+        ],
     );
     shape(
         &get_json(port, "/api/summary").await,
@@ -808,6 +816,8 @@ async fn status_names_the_address_and_no_workspace_yet() {
     assert_eq!(status["bind"], "127.0.0.1");
     assert_eq!(status["port"], port);
     assert_eq!(status["workspaces"], serde_json::json!([]));
+    assert_eq!(status["refreshSeconds"], 60);
+    assert_eq!(status["pageVersion"], "abc");
 }
 
 /// The summary's figures, computed from the seed.
