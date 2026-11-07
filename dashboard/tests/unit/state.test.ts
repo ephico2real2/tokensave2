@@ -29,7 +29,7 @@ describe('URL state', () => {
 
   it('reads every key', () => {
     const s = parseUrlState(
-      '?tab=models&range=custom&from=2026-10-01&to=2026-10-20&workspace=~/gitRepos&repo=inkcast&tool=Codex&model=gpt-6.1-sol&effort=high',
+      '?tab=models&range=custom&from=2026-10-01&to=2026-10-20&workspace=~/gitRepos&repo=/home/you/inkcast&tool=Codex&model=gpt-6.1-sol&effort=high',
       TODAY,
     );
     expect(s).toEqual({
@@ -38,7 +38,7 @@ describe('URL state', () => {
       from: '2026-10-01',
       to: '2026-10-20',
       workspace: '~/gitRepos',
-      repo: 'inkcast',
+      repo: '/home/you/inkcast',
       tool: 'Codex',
       model: 'gpt-6.1-sol',
       effort: 'high',
@@ -70,7 +70,7 @@ describe('URL state', () => {
 
   it('writes only what differs from the defaults, and reads back the same state', () => {
     expect(serializeUrlState(parseUrlState('', TODAY))).toBe('');
-    const q = '?tab=repos&range=custom&from=2026-10-01&to=2026-10-20&repo=inkcast&tool=Claude+Code';
+    const q = '?tab=repos&range=custom&from=2026-10-01&to=2026-10-20&repo=%2Fhome%2Fyou%2Finkcast&tool=Claude+Code';
     const s = parseUrlState(q, TODAY);
     expect(serializeUrlState(s)).toBe(q);
     expect(parseUrlState(serializeUrlState(s), TODAY)).toEqual(s);

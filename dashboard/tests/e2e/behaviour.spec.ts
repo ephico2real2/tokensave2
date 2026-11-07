@@ -95,3 +95,29 @@ test('the index command stays on one line (it scrolls in its box when it does no
   });
   expect(lines).toBe(1);
 });
+
+test('a long repo path does not widen the Repo filter or the page', async ({ page }) => {
+  const parent = `/home/you/${'deep-folder/'.repeat(12)}`;
+  const repos = ['a', 'b'].map((side) => ({
+    name: 'main',
+    path: `${parent}${side}/main`,
+    indexed: true,
+    spentTokens: null,
+    savedTokens: null,
+    tools: [],
+    lastActivity: null,
+  }));
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openDashboard(page, { repos });
+  const select = page.getByRole('combobox', { name: 'Repo' });
+  await expect(select.locator('option').nth(1)).toHaveText(`main · ${parent}a/main`);
+  expect((await select.boundingBox())!.width).toBeLessThanOrEqual(256);
+
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.getByRole('button', { name: /^Filters · / }).click();
+    await expect(select).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+    await page.getByRole('button', { name: /^Filters · / }).click();
+  }
+});

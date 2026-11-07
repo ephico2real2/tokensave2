@@ -12,6 +12,7 @@ import {
   defaultCustom,
   localToday,
   parseUrlState,
+  repoChoices,
   readStoredTheme,
   serializeUrlState,
   storeTheme,
@@ -70,7 +71,7 @@ export function App() {
   // Models tabs draw from these same requests.
   const repos = useDataset(reposApi, scope);
   const models = useDataset(modelsApi, scope);
-  const repoOptions = (dataOf(repos)?.repos ?? []).map((r) => r.name);
+  const repoOptions = repoChoices(dataOf(repos)?.repos ?? []);
   const modelOptions = (dataOf(models)?.rows ?? []).map((r) => r.model);
 
   const update = (patch: Partial<UrlState>) => setState((s) => ({ ...s, ...patch }));

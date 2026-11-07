@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Resource } from '../api/useResource';
 import { rangeText } from '../format';
-import { RANGES, TABS, THEMES, type Filters, type Range, type Tab, type Theme, type UrlState } from '../state';
+import { RANGES, TABS, THEMES, repoName, type Filters, type Range, type RepoChoice, type Tab, type Theme, type UrlState } from '../state';
 import { EFFORTS, TOOLS, type Status } from '../types';
 import { Segmented } from './Segmented';
 
@@ -14,7 +14,7 @@ export type HeaderProps = {
   status: Resource<Status>;
   onRetryStatus: () => void;
   /** Filter choices, from the repos and models in the current range. */
-  repoOptions: string[];
+  repoOptions: RepoChoice[];
   modelOptions: string[];
   onTheme: (theme: Theme) => void;
   onTab: (tab: Tab) => void;
@@ -90,7 +90,8 @@ export function AppHeader(p: HeaderProps) {
             label="Repo"
             all="All repos"
             value={state.repo}
-            options={withValue(p.repoOptions, state.repo)}
+            options={withValue(p.repoOptions.map((r) => r.path), state.repo)}
+            labelOf={(path) => p.repoOptions.find((r) => r.path === path)?.label ?? repoName(path)}
             onChange={(v) => p.onFilter('repo', v)}
           />
           <FilterSelect
@@ -207,7 +208,7 @@ function withValue(options: readonly string[], value: string): string[] {
 }
 
 function filterSummary(s: Filters): string {
-  const parts = [s.repo || 'all repos', s.tool || 'all tools'];
+  const parts = [s.repo ? repoName(s.repo) : 'all repos', s.tool || 'all tools'];
   if (s.model) parts.push(s.model);
   if (s.effort) parts.push(`${s.effort} effort`);
   return parts.join(', ');
@@ -218,12 +219,14 @@ function FilterSelect({
   all,
   value,
   options,
+  labelOf = (option) => option,
   onChange,
 }: {
   label: string;
   all: string;
   value: string;
   options: readonly string[];
+  labelOf?: (option: string) => string;
   onChange: (value: string) => void;
 }) {
   return (
@@ -233,7 +236,7 @@ function FilterSelect({
         <option value="">{all}</option>
         {options.map((o) => (
           <option key={o} value={o}>
-            {o}
+            {labelOf(o)}
           </option>
         ))}
       </select>

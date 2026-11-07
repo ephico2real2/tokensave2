@@ -84,6 +84,25 @@ function oneOf<T extends string>(value: string | null, allowed: readonly T[]): T
   return value !== null && (allowed as readonly string[]).includes(value) ? (value as T) : undefined;
 }
 
+/** The server takes `repo` only as an absolute path, so a bare name from an older link means no filter. */
+function absolutePath(value: string | null): string | null {
+  return value && /^(\/|[A-Za-z]:[\\/]|\\\\)/.test(value) ? value : null;
+}
+
+/** The last folder of a repo's path, to name a repo that /api/repos no longer lists. */
+export function repoName(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
+/** One choice of the repo filter per path. Names can repeat (every worktree of a branch), paths can't, so a repeated name also shows its path, after the name because a narrow select clips the end. */
+export type RepoChoice = { path: string; label: string };
+
+export function repoChoices(repos: readonly { name: string; path: string }[]): RepoChoice[] {
+  const uses = new Map<string, number>();
+  for (const r of repos) uses.set(r.name, (uses.get(r.name) ?? 0) + 1);
+  return repos.map((r) => ({ path: r.path, label: uses.get(r.name) === 1 ? r.name : `${r.name} · ${r.path}` }));
+}
+
 export function parseUrlState(search: string, today: string): UrlState {
   const q = new URLSearchParams(search);
   const tab = oneOf(q.get('tab'), TABS.map((t) => t.id)) ?? DEFAULT_TAB;
@@ -103,7 +122,7 @@ export function parseUrlState(search: string, today: string): UrlState {
     from,
     to,
     workspace: q.get('workspace') ?? '',
-    repo: q.get('repo') ?? '',
+    repo: absolutePath(q.get('repo')) ?? '',
     tool: oneOf(q.get('tool'), TOOLS) ?? '',
     model: q.get('model') ?? '',
     effort: oneOf(q.get('effort'), EFFORTS) ?? '',
