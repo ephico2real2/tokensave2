@@ -20,7 +20,7 @@ export type ApiMode = 'fixture' | 'empty' | 'error';
  */
 export async function openDashboard(
   page: Page,
-  { search = '', theme, api = 'fixture', repos }: { search?: string; theme?: 'dark' | 'light' | 'auto'; api?: ApiMode; repos?: unknown[] } = {},
+  { search = '', theme, api = 'fixture', repos, keepStatusRoute = false }: { search?: string; theme?: 'dark' | 'light' | 'auto'; api?: ApiMode; repos?: unknown[]; keepStatusRoute?: boolean } = {},
 ): Promise<string[]> {
   const requests: string[] = [];
   await page.clock.setFixedTime(new Date(MOCKUP_NOW));
@@ -30,6 +30,10 @@ export async function openDashboard(
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url());
     requests.push(`${url.pathname}${url.search}`);
+    if (keepStatusRoute && url.pathname === '/api/status') {
+      await route.fallback();
+      return;
+    }
     if (api === 'error') {
       await route.fulfill({ status: 500, contentType: 'text/plain', body: 'database is locked' });
       return;

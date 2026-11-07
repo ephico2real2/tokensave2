@@ -11,7 +11,15 @@ export const TOOLS: readonly Tool[] = ['Claude Code', 'Codex', 'Cursor', 'Pi', '
 export const EFFORTS: readonly Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 /** GET /api/status */
-export type Status = { bind: string; port: number; workspaces: string[] };
+export type Status = {
+  bind: string;
+  port: number;
+  workspaces: string[];
+  /** How often the server reads new agent logs and the page asks again; 0 is off. */
+  refreshSeconds: number;
+  /** Changes with the page's embedded files, so an open tab can tell that a new build runs. */
+  pageVersion: string;
+};
 
 /** GET /api/summary?range&from&to&repo&tool&model&effort */
 export type Summary = {

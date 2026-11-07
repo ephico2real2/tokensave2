@@ -13,6 +13,10 @@ export type HeaderProps = {
   today: string;
   status: Resource<Status>;
   onRetryStatus: () => void;
+  /** When a dataset last loaded, in milliseconds since the epoch. */
+  updatedAt: number | null;
+  /** The last load failed, so the figures on screen are from `updatedAt`. */
+  refreshFailed: boolean;
   /** Filter choices, from the repos and models in the current range. */
   repoOptions: RepoChoice[];
   modelOptions: string[];
@@ -54,7 +58,7 @@ export function AppHeader(p: HeaderProps) {
             </div>
             <div class="ts-brand__text">
               <span class="ts-brand__name">tokensave</span>
-              <ServerLine status={p.status} onRetry={p.onRetryStatus} />
+              <ServerLine status={p.status} onRetry={p.onRetryStatus} updatedAt={p.updatedAt} refreshFailed={p.refreshFailed} />
             </div>
           </div>
           <div class="ts-header__controls">
@@ -172,11 +176,32 @@ export function rangeBounds(state: Pick<UrlState, 'range' | 'from' | 'to'>, toda
   return [start.toISOString().slice(0, 10), today];
 }
 
-function ServerLine({ status, onRetry }: { status: Resource<Status>; onRetry: () => void }) {
+function ServerLine({
+  status,
+  onRetry,
+  updatedAt,
+  refreshFailed,
+}: {
+  status: Resource<Status>;
+  onRetry: () => void;
+  updatedAt: number | null;
+  refreshFailed: boolean;
+}) {
   if (status.status === 'ready') {
+    const at = updatedAt === null ? '' : new Date(updatedAt).toLocaleTimeString();
     return (
-      <span class="ts-brand__sub">
-        Dashboard · {status.data.bind}:{status.data.port}
+      <span class="ts-brand__sub ts-server">
+        <span>
+          Dashboard · {status.data.bind}:{status.data.port}
+        </span>
+        {refreshFailed ? (
+          <span class="ts-refresh-failed" role="status">
+            {' '}
+            · refresh failed, figures from {at}
+          </span>
+        ) : (
+          at && <span> · updated {at}</span>
+        )}
       </span>
     );
   }

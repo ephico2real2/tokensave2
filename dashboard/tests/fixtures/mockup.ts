@@ -26,7 +26,7 @@ export const MOCKUP_NOW = Date.parse(`${MOCKUP_TODAY}T12:00:00Z`);
 const DAY_MS = 86_400_000;
 const at = (minutesAgo: number): string => new Date(MOCKUP_NOW - minutesAgo * 60_000).toISOString();
 
-export const status: Status = { bind: '127.0.0.1', port: 7311, workspaces: ['~/gitRepos'] };
+export const status: Status = { bind: '127.0.0.1', port: 7311, workspaces: ['~/gitRepos'], refreshSeconds: 60, pageVersion: 'sample' };
 
 /** The range a request asks for: `range=N` ending today, or `from`/`to`. */
 export function requestedDays(query: URLSearchParams, today = MOCKUP_TODAY): { end: string; n: number } {

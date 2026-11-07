@@ -138,9 +138,15 @@ tokensave dashboard stop
 `enable` switches it on in `~/.tokensave/dashboard.toml` and starts it. `open` opens `http://127.0.0.1:7311/` in
 the browser.
 
-It binds `127.0.0.1` only and opens `global.db` read only. It never runs an ingest itself, so its figures are as
-recent as the last `tokensave cost`, `cursor sync` or agent hook. Settings (port, theme, default range) are
-described in the README's [Dashboard](../README.md#dashboard) section. Its log is `~/.tokensave/dashboard.log`.
+It binds `127.0.0.1` only, and its API opens `global.db` read only. While it runs, one background task reads new
+agent logs every `refresh_seconds` (60 by default, 0 turns it off), and an open page asks again at the same interval
+with no reload. A hidden tab waits, and asks at once when it returns. When a refresh fails, the page keeps its figures
+and says so in the header. Cursor's figures still need `tokensave cursor sync`, because that command calls Cursor's
+servers. Settings (port, theme, default range, refresh) are described in the README's
+[Dashboard](../README.md#dashboard) section. Its log is `~/.tokensave/dashboard.log`.
+
+After `cargo install`, run `tokensave dashboard stop` and `tokensave dashboard start`, because a running server keeps
+its old binary. An open tab sees the new build at its next refresh, and reloads itself.
 
 It doesn't start at login yet ([inkcast#270](https://github.com/inkcasthq/inkcast/issues/270)).
 

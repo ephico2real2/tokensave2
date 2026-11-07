@@ -147,6 +147,10 @@ button {
   min-height: 36px;
 }
 
+.ts-refresh-failed {
+  color: var(--warnFg);
+}
+
 .ts-select--filter {
   padding: 5px 8px;
   min-height: 34px;
@@ -713,6 +717,7 @@ button {
 .ts-who__sub {
   font-size: 12px;
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .ts-line__figures {

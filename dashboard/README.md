@@ -71,3 +71,11 @@ MOCKUP_DIR=/tmp/mockup npx playwright test tests/e2e/mockup-diff.spec.ts --worke
 
 `test-results/mockup-diff/report.md` lists, per tab, width and theme, the share of differing
 pixels for the whole page and for `<main>` alone, with a diff image for each.
+
+## Sweep a running dashboard
+
+`npm run sweep` drives a running dashboard (`DASHBOARD_URL`, by default `http://127.0.0.1:7311`) with its real API and
+data. It covers every tab at three widths in every theme and range, every repo on every tab, every filter choice, every
+tool crossed with every effort, the controls, invalid links and the keyboard. A failed request, a script error, a failed
+section, a leftover placeholder or a sideways scroll fails the case, and the report names each one. It only reads.
+

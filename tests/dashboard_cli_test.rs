@@ -32,7 +32,14 @@ fn tokensave(home: &TempDir) -> Command {
         .env("TOKENSAVE_SKIP_AGENT_MAINTENANCE", "1")
         .env("TOKENSAVE_SKIP_UPDATE_CHECK", "1")
         .env_remove("CODEX_HOME");
-    for name in ["ENABLED", "PORT", "BIND", "DEFAULT_RANGE", "THEME"] {
+    for name in [
+        "ENABLED",
+        "PORT",
+        "BIND",
+        "DEFAULT_RANGE",
+        "THEME",
+        "REFRESH_SECONDS",
+    ] {
         command.env_remove(format!("TOKENSAVE_DASHBOARD_{name}"));
     }
     command
@@ -341,6 +348,14 @@ fn start_in_the_background_then_stop() {
     let home = TempDir::new().unwrap();
     let _stop = StopOnDrop(&home);
     let port = free_port();
+    let data = home.path().join(".tokensave");
+    std::fs::create_dir_all(&data).unwrap();
+    // With refresh off, nothing writes: the server never creates the database.
+    std::fs::write(
+        data.join("dashboard.toml"),
+        "[dashboard]\nrefresh_seconds = 0\n",
+    )
+    .unwrap();
     let started = run(&home, &["dashboard", "start", "--port", &port.to_string()]);
     assert!(started.status.success(), "{}", stderr(&started));
     let text = stdout(&started);
@@ -398,4 +413,23 @@ fn enable_and_disable_record_the_choice_and_start_or_stop() {
     let config =
         std::fs::read_to_string(home.path().join(".tokensave").join("dashboard.toml")).unwrap();
     assert!(config.contains("enabled = false"), "{config}");
+}
+
+/// By default the server's refresh makes the database itself, so a new machine
+/// shows figures with no `tokensave cost` first.
+#[test]
+fn the_default_refresh_creates_the_database_and_the_api_then_answers() {
+    let home = TempDir::new().unwrap();
+    let _stop = StopOnDrop(&home);
+    let port = free_port();
+    let started = run(&home, &["dashboard", "start", "--port", &port.to_string()]);
+    assert!(started.status.success(), "{}", stderr(&started));
+    let db = home.path().join(".tokensave").join("global.db");
+    for _ in 0..200 {
+        if db.exists() && http_status(port, "/api/summary?range=7") == "HTTP/1.1 200 OK" {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    panic!("the refresh did not make the database within 10 s");
 }

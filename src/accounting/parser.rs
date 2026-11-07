@@ -660,7 +660,7 @@ pub(crate) async fn ingest_from_home(gdb: &GlobalDb, home: &Path) -> IngestStats
 
 /// Ingest every source below `home`, with Codex's data folder given:
 /// `$CODEX_HOME` when the real home is ingested, `home/.codex` in tests.
-async fn ingest_sources(gdb: &GlobalDb, home: &Path, codex_home: &Path) -> IngestStats {
+pub(crate) async fn ingest_sources(gdb: &GlobalDb, home: &Path, codex_home: &Path) -> IngestStats {
     // A database newer than this binary is read only (inkcast #248).
     if gdb.newer_schema().is_some() {
         return IngestStats::empty();
