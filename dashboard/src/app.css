@@ -150,6 +150,9 @@ button {
 .ts-select--filter {
   padding: 5px 8px;
   min-height: 34px;
+  /* A select is as wide as its longest option, and a repo's option can be a long path. */
+  min-width: 0;
+  max-width: 16rem;
 }
 
 .ts-filterbtn {
@@ -1051,6 +1054,8 @@ button {
   .ts-filters.is-open {
     display: flex;
     flex-direction: column;
+    /* A wrapping column sizes its line to the widest field, which would ignore the sheet's width. */
+    flex-wrap: nowrap;
     align-items: stretch;
     padding: 12px;
     background: var(--raised);

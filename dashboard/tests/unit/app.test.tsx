@@ -226,7 +226,7 @@ describe('state', () => {
 
   it('filter choices come from the repos and models in the range, and a shared value stays', async () => {
     mockApi('fixture');
-    open('?repo=old-repo');
+    open('?repo=/home/you/old-repo');
     await loaded();
     const repo = screen.getByRole('combobox', { name: /Repo/ }) as HTMLSelectElement;
     expect([...repo.options].map((o) => o.textContent)).toEqual([
@@ -239,7 +239,7 @@ describe('state', () => {
       'data-lab',
       'old-repo',
     ]);
-    expect(repo.value).toBe('old-repo');
+    expect(repo.value).toBe('/home/you/old-repo');
     const model = screen.getByRole('combobox', { name: /Model/ }) as HTMLSelectElement;
     expect([...model.options].map((o) => o.value)).toEqual(['', 'claude-opus-5-5', 'claude-fable-5-1', 'claude-sonnet-5-5', 'gpt-6.1-sol']);
     const ws = screen.getByRole('combobox', { name: /Workspace/ }) as HTMLSelectElement;
@@ -265,7 +265,7 @@ describe('state', () => {
 
   it('the Filters button opens and closes the filter sheet', async () => {
     mockApi('fixture');
-    open('?repo=inkcast&tool=Codex');
+    open('?repo=/home/you/inkcast&tool=Codex');
     await loaded();
     const button = screen.getByRole('button', { name: 'Filters · inkcast, Codex' });
     expect(button.getAttribute('aria-expanded')).toBe('false');

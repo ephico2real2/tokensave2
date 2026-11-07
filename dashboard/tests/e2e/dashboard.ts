@@ -20,7 +20,7 @@ export type ApiMode = 'fixture' | 'empty' | 'error';
  */
 export async function openDashboard(
   page: Page,
-  { search = '', theme, api = 'fixture' }: { search?: string; theme?: 'dark' | 'light' | 'auto'; api?: ApiMode } = {},
+  { search = '', theme, api = 'fixture', repos }: { search?: string; theme?: 'dark' | 'light' | 'auto'; api?: ApiMode; repos?: unknown[] } = {},
 ): Promise<string[]> {
   const requests: string[] = [];
   await page.clock.setFixedTime(new Date(MOCKUP_NOW));
@@ -35,7 +35,7 @@ export async function openDashboard(
       return;
     }
     const body = api === 'empty' ? emptyFor(url.pathname) : fixtureFor(url.pathname, url.searchParams);
-    await route.fulfill({ json: body });
+    await route.fulfill({ json: repos && url.pathname === '/api/repos' ? { ...(body as object), repos } : body });
   });
   await page.goto(`/${search}`);
   await settled(page);
