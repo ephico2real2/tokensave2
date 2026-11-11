@@ -796,7 +796,7 @@ async fn every_endpoint_answers_in_its_type() {
         one_of(&run["tool"], &TOOLS);
         one_of(
             &run["state"],
-            &["finished", "running", "stopped", "partial"],
+            &["finished", "running", "stopped", "partial", "unknown"],
         );
     }
     let roles = get_json(port, "/api/roles").await;
@@ -1221,7 +1221,9 @@ async fn runs_nest_subagents_under_their_session_with_role_and_state() {
         "Codex",
         "finished",
     );
-    expect("CT1", "C1".into(), "worker", "other", "Codex", "partial");
+    // A Codex subagent thread records no end (tokensave2 #25): its state is
+    // unknown, never partial.
+    expect("CT1", "C1".into(), "worker", "other", "Codex", "unknown");
 
     // Tokens and cost of each run, from its turns.
     for (id, run) in &by_id {
@@ -1312,8 +1314,9 @@ async fn roles_share_the_priced_cost() {
         close(&row["share"], cost / total);
     }
     close(&roles["subagentShare"], (total - costs["main"]) / total);
-    // A1 running, A3 and CT1 never said they finished.
-    assert_eq!(roles["unfinishedRuns"], 3);
+    // A1 running, A3 never said it finished. CT1 is a Codex thread, whose
+    // source records no end: unknown, and not counted (tokensave2 #25).
+    assert_eq!(roles["unfinishedRuns"], 2);
     assert_eq!(
         get_json(port, "/api/roles?tool=Pi").await,
         serde_json::json!({"roles": [], "subagentShare": 0.0, "unfinishedRuns": 0})

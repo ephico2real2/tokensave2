@@ -143,6 +143,7 @@ pub(super) const RUNS: &str = "WITH f AS (
                         CASE WHEN r.run_id IS NOT NULL AND a.finished = 1 THEN 'finished'
                              WHEN seen.last >= ?9 THEN 'running'
                              WHEN r.run_id IS NULL THEN 'finished'
+                             WHEN r.agent = 'codex' THEN 'unknown'
                              ELSE 'partial' END AS state
                    FROM r
                    JOIN d ON d.rk = r.rk AND d.n = 1
@@ -205,6 +206,7 @@ pub(super) const ROLES: &str = "WITH f AS (
                         CASE WHEN r.run_id IS NOT NULL AND a.finished = 1 THEN 'finished'
                              WHEN seen.last >= ?9 THEN 'running'
                              WHEN r.run_id IS NULL THEN 'finished'
+                             WHEN r.agent = 'codex' THEN 'unknown'
                              ELSE 'partial' END AS state
                    FROM r
                    JOIN d ON d.rk = r.rk AND d.n = 1
@@ -215,7 +217,7 @@ pub(super) const ROLES: &str = "WITH f AS (
                 COALESCE(SUM(priced) / NULLIF(SUM(SUM(priced)) OVER (), 0), 0.0),
                 COALESCE(SUM(SUM(CASE WHEN role <> 'main' THEN priced ELSE 0.0 END)) OVER ()
                          / NULLIF(SUM(SUM(priced)) OVER (), 0), 0.0),
-                SUM(SUM(role <> 'main' AND state <> 'finished')) OVER ()
+                SUM(SUM(role <> 'main' AND state NOT IN ('finished', 'unknown'))) OVER ()
            FROM runs
           GROUP BY role
           ORDER BY 2 DESC, role";

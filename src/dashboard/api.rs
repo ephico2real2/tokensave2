@@ -565,10 +565,13 @@ struct RunRow {
 /// in its description ("review"; "build", "implement"), else `other`. Its
 /// state is `finished` when its record says so; else `running` when it had a
 /// turn in the last [`RUNNING_SECS`]; else `finished` for a session (a
-/// session records no end) and `partial` for a subagent, whose record never
-/// said it finished. Claude Code writes `finished` only once a run ends, so a
+/// session records no end); else `unknown` for a Codex subagent run, whose
+/// rollout marks the end of each task but never the end of the thread
+/// (tokensave2 #25); else `partial` for a subagent whose record never said
+/// it finished. Claude Code writes `finished` only once a run ends, so a
 /// stopped run cannot be told from one whose record was cut short, and
-/// `stopped` is never returned.
+/// `stopped` is never returned. The unfinished count of `/api/roles` leaves
+/// `unknown` out.
 ///
 /// `?8` is the row limit (`-1` for all) and `?9` the time a turn must be at
 /// or after for its run to be `running`.

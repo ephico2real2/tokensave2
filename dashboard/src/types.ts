@@ -52,7 +52,8 @@ export type TopRun = {
   costUsd: number | null;
 };
 
-export type RunState = 'finished' | 'running' | 'stopped' | 'partial';
+/** `unknown`: a Codex subagent run, whose source records no end (tokensave2 #25). */
+export type RunState = 'finished' | 'running' | 'stopped' | 'partial' | 'unknown';
 
 /** GET /api/runs?range&from&to&repo&tool&model&effort */
 export type Run = {
