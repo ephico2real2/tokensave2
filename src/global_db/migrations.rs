@@ -41,6 +41,10 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         version: 2,
         steps: V2,
     },
+    Migration {
+        version: 3,
+        steps: V3,
+    },
 ];
 
 /// The schema version this binary writes.
@@ -245,6 +249,18 @@ const V2: &[Step] = &[Step::Batch(
      WHERE agent = 'claude' AND cost_usd = 0
        AND input_tokens + output_tokens + cache_write_tokens + cache_read_tokens > 0;
     CREATE INDEX idx_turns_unpriced ON turns(model) WHERE cost_usd IS NULL",
+)];
+
+/// Version 3: the working folder behind each `turns.project_hash` bucket, so
+/// the dashboard can name a session in a folder the `projects` registry does
+/// not list. Claude Code writes `cwd` on every transcript line and Codex on
+/// its `session_meta`; the ingest records the newest one seen per bucket.
+const V3: &[Step] = &[Step::Batch(
+    "CREATE TABLE IF NOT EXISTS project_dirs (
+        project_hash TEXT PRIMARY KEY,
+        path TEXT NOT NULL,
+        last_seen INTEGER NOT NULL
+    )",
 )];
 
 /// Where a database's schema stands after [`migrate`].
@@ -552,7 +568,10 @@ mod tests {
         let columns = turns_columns(&conn).await;
         let before = turns_rows(&conn).await;
 
-        assert_eq!(migrate(&conn, MIGRATIONS).await.unwrap(), Outcome::Current);
+        assert_eq!(
+            migrate(&conn, &MIGRATIONS[..2]).await.unwrap(),
+            Outcome::Current
+        );
 
         assert_eq!(user_version(&conn).await.unwrap(), 2);
         let after = turns_rows(&conn).await;

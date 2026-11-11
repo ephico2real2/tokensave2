@@ -12,6 +12,9 @@
 /// Every repo path in the `projects` registry.
 pub(super) const REGISTRY: &str = "SELECT path FROM projects ORDER BY path";
 
+/// The working folder recorded behind each turns bucket (schema version 3).
+pub(super) const PROJECT_DIRS: &str = "SELECT project_hash, path FROM project_dirs";
+
 /// `/api/summary`: spent tokens, priced cost, unpriced turns, saved tokens and the two rates.
 pub(super) const SUMMARY: &str = "SELECT t.spent, t.cost, t.unpriced, s.saved,
                 COALESCE(s.saved * 1.0 / NULLIF(t.spent + s.saved, 0), 0.0),

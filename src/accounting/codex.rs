@@ -338,9 +338,26 @@ pub(crate) async fn ingest_dir(gdb: &GlobalDb, root: &Path) -> CodexIngestResult
                             }
                             tokens_consumed += turn.input_tokens + turn.output_tokens;
                         }
-                    } else if let Some(run) = apply_context(&mut context, &value) {
-                        if !already_read {
-                            had_errors |= !gdb.upsert_agent_run(&run).await;
+                    } else {
+                        let is_meta = line_type(&value) == Some("session_meta");
+                        let run = apply_context(&mut context, &value);
+                        if is_meta && !already_read {
+                            // The thread's working folder, so the dashboard
+                            // can name its bucket (fork, dashboard F2).
+                            if let Some(cwd) = context.cwd.as_deref() {
+                                let seen = value
+                                    .get("timestamp")
+                                    .and_then(Value::as_str)
+                                    .and_then(crate::accounting::parser::parse_timestamp)
+                                    .unwrap_or(0) as i64;
+                                gdb.record_project_dir(&project_hash_of(Some(cwd)), cwd, seen)
+                                    .await;
+                            }
+                        }
+                        if let Some(run) = run {
+                            if !already_read {
+                                had_errors |= !gdb.upsert_agent_run(&run).await;
+                            }
                         }
                     }
                 }

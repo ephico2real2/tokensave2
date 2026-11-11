@@ -214,6 +214,7 @@ pub(crate) fn parse_line(line: &str, project_hash: &str, session_id: &str) -> Op
         calls,
         bash,
         tool_use_ids,
+        cwd: v.get("cwd").and_then(Value::as_str).map(str::to_string),
     })
 }
 
@@ -556,6 +557,9 @@ pub(crate) async fn ingest_claude_from_home(gdb: &GlobalDb, home: &Path) -> Inge
         let mut line = String::new();
         let mut current_offset = seek_to;
         let mut read_failed = false;
+        // The working folder is the same on every line of a file: one
+        // sighting per ingest of the file is enough.
+        let mut dir_recorded = false;
 
         loop {
             line.clear();
@@ -577,6 +581,13 @@ pub(crate) async fn ingest_claude_from_home(gdb: &GlobalDb, home: &Path) -> Inge
                     }
                     if let Some(line) = parse_line(trimmed, &project_hash, &session_id) {
                         let turn = &line.turn;
+                        if !dir_recorded {
+                            if let Some(cwd) = line.cwd.as_deref() {
+                                dir_recorded = gdb
+                                    .record_project_dir(&project_hash, cwd, turn.timestamp as i64)
+                                    .await;
+                            }
+                        }
                         // Remember which turn issued each tool call, so the
                         // result blocks in a later user message can be sized
                         // and added back to it (#474).

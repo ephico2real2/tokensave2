@@ -1097,6 +1097,42 @@ impl GlobalDb {
             .is_ok_and(|n| n > 0)
     }
 
+    /// Records the working folder `path` behind the turns bucket
+    /// `project_hash`, seen at `seen` (unix seconds). A newer sighting
+    /// replaces an older one; an older sighting leaves the row as it is.
+    pub async fn record_project_dir(&self, project_hash: &str, path: &str, seen: i64) -> bool {
+        self.conn
+            .execute(
+                "INSERT INTO project_dirs (project_hash, path, last_seen)
+                 VALUES (?1, ?2, ?3)
+                 ON CONFLICT(project_hash) DO UPDATE SET
+                     path      = excluded.path,
+                     last_seen = excluded.last_seen
+                 WHERE excluded.last_seen >= project_dirs.last_seen",
+                params![project_hash.to_string(), path.to_string(), seen],
+            )
+            .await
+            .is_ok()
+    }
+
+    /// Every recorded working folder, as `(project_hash, path)`.
+    pub async fn project_dirs(&self) -> Vec<(String, String)> {
+        let Ok(mut rows) = self
+            .conn
+            .query("SELECT project_hash, path FROM project_dirs", ())
+            .await
+        else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        while let Ok(Some(row)) = rows.next().await {
+            if let (Ok(hash), Ok(path)) = (row.get::<String>(0), row.get::<String>(1)) {
+                out.push((hash, path));
+            }
+        }
+        out
+    }
+
     /// The recorded subagent run with this id, if any.
     pub async fn agent_run(&self, run_id: &str) -> Option<crate::types::AgentRun> {
         let mut rows = self

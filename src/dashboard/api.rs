@@ -439,13 +439,24 @@ fn iso(unix_secs: i64) -> String {
     crate::blame_engine::format_rfc3339(unix_secs)
 }
 
-/// The repo name of each project-hash bucket, from the `projects` registry.
+/// The repo name of each project-hash bucket: from the `projects` registry,
+/// else from the working folder the ingest recorded for the bucket
+/// (`project_dirs`). A database still at schema version 2 has no such
+/// table, and its buckets then keep their names from the registry only.
 async fn repo_names(db: &ReadOnlyDb) -> Result<HashMap<String, String>, ApiError> {
-    let paths = registry(db).await?;
-    Ok(paths
+    let dirs = rows(db, sql::PROJECT_DIRS, Vec::new(), |row| {
+        Ok((text(row, 0)?, text(row, 1)?))
+    })
+    .await
+    .unwrap_or_default();
+    let mut names: HashMap<String, String> = dirs
         .into_iter()
-        .map(|path| (params::project_hash_of(&path), repo_name(&path)))
-        .collect())
+        .map(|(hash, path)| (hash, repo_name(&path)))
+        .collect();
+    for path in registry(db).await? {
+        names.insert(params::project_hash_of(&path), repo_name(&path));
+    }
+    Ok(names)
 }
 
 /// Every repo path in the `projects` registry.

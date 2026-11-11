@@ -522,6 +522,47 @@ async fn get_json(port: u16, path: &str) -> Value {
     reply.json()
 }
 
+/// A session in a folder the `projects` registry does not list is named by
+/// the working folder the ingest recorded for its bucket (`project_dirs`,
+/// schema version 3), not by the bucket's hash.
+#[tokio::test]
+async fn a_session_outside_the_registry_is_named_by_its_recorded_folder() {
+    let fx = fixture().await;
+    let db = libsql::Builder::new_local(&fx.db_path)
+        .build()
+        .await
+        .unwrap();
+    let conn = db.connect().unwrap();
+    conn.execute(
+        "INSERT INTO project_dirs (project_hash, path, last_seen) VALUES (?1, ?2, 0)",
+        vec![
+            libsql::Value::Text(fx.hash(Repo::Elsewhere)),
+            libsql::Value::Text(fx.path(Repo::Elsewhere).into()),
+        ],
+    )
+    .await
+    .unwrap();
+    let (port, _stop) = serve(&fx, PAGE).await;
+    // t6 is the only turn in the elsewhere folder: session S9, 40 days ago.
+    let top = get_json(port, "/api/runs/top?range=45").await;
+    let s9 = top
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|run| run["id"] == "S9")
+        .unwrap_or_else(|| panic!("S9 is not listed: {top}"));
+    assert_eq!(s9["repo"], "repo", "{s9}");
+    assert_eq!(s9["name"], "repo · session", "{s9}");
+    let runs = get_json(port, "/api/runs?range=45").await;
+    let s9 = runs
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|run| run["id"] == "S9")
+        .unwrap();
+    assert_eq!(s9["name"], "repo · session", "{s9}");
+}
+
 /// A repo path that is absolute on this platform and holds no turn.
 #[cfg(not(windows))]
 const NOWHERE: &str = "/nowhere";
