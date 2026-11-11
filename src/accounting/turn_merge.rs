@@ -32,9 +32,6 @@ pub struct ClaudeLine {
     /// Every `tool_use` id on the line, so the results in a later user line
     /// can be attributed to the turn (#474).
     pub tool_use_ids: Vec<String>,
-    /// The line's `cwd`: the working folder behind the session's project
-    /// bucket, recorded once per file so the dashboard can name it.
-    pub cwd: Option<String>,
 }
 
 impl ClaudeLine {
@@ -203,7 +200,6 @@ mod tests {
             tool_use_ids: calls.iter().map(|call| call.id.clone()).collect(),
             calls,
             bash,
-            cwd: None,
         }
     }
 

@@ -1133,6 +1133,32 @@ impl GlobalDb {
         out
     }
 
+    /// Whether the `meta` row `key` is set (a one-time step that ran).
+    pub async fn meta_flag(&self, key: &str) -> bool {
+        let Ok(mut rows) = self
+            .conn
+            .query(
+                "SELECT 1 FROM meta WHERE key = ?1",
+                params![key.to_string()],
+            )
+            .await
+        else {
+            return false;
+        };
+        matches!(rows.next().await, Ok(Some(_)))
+    }
+
+    /// Sets the `meta` row `key`, recording that a one-time step ran.
+    pub async fn set_meta_flag(&self, key: &str) {
+        let _ = self
+            .conn
+            .execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, '1')",
+                params![key.to_string()],
+            )
+            .await;
+    }
+
     /// The recorded subagent run with this id, if any.
     pub async fn agent_run(&self, run_id: &str) -> Option<crate::types::AgentRun> {
         let mut rows = self
