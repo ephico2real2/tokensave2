@@ -34,6 +34,7 @@ export function Agents({ scope }: { scope: Scope }) {
         dataset="roles"
         eyebrow="By role"
         title="Cost by role"
+        note="Codex records no end for a subagent run: such a run shows as unknown and is not counted as unfinished."
         status={statusOf(roles, (r) => r.roles.length === 0, 'No agent runs in this range.')}
         rows={(roleData?.roles ?? []).map((r) => ({
           name: r.role,

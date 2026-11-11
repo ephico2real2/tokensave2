@@ -439,13 +439,29 @@ fn iso(unix_secs: i64) -> String {
     crate::blame_engine::format_rfc3339(unix_secs)
 }
 
-/// The repo name of each project-hash bucket, from the `projects` registry.
+/// The repo name of each project-hash bucket: from the `projects` registry,
+/// else from the working folder the ingest recorded for the bucket
+/// (`project_dirs`). A database still at schema version 2 has no such
+/// table, and its buckets then keep their names from the registry only;
+/// any other failure of that query is answered as the error it is.
 async fn repo_names(db: &ReadOnlyDb) -> Result<HashMap<String, String>, ApiError> {
-    let paths = registry(db).await?;
-    Ok(paths
+    let dirs = match rows(db, sql::PROJECT_DIRS, Vec::new(), |row| {
+        Ok((text(row, 0)?, text(row, 1)?))
+    })
+    .await
+    {
+        Ok(dirs) => dirs,
+        Err(error) if error.message.contains("no such table: project_dirs") => Vec::new(),
+        Err(error) => return Err(error),
+    };
+    let mut names: HashMap<String, String> = dirs
         .into_iter()
-        .map(|path| (params::project_hash_of(&path), repo_name(&path)))
-        .collect())
+        .map(|(hash, path)| (hash, repo_name(&path)))
+        .collect();
+    for path in registry(db).await? {
+        names.insert(params::project_hash_of(&path), repo_name(&path));
+    }
+    Ok(names)
 }
 
 /// Every repo path in the `projects` registry.
@@ -549,10 +565,13 @@ struct RunRow {
 /// in its description ("review"; "build", "implement"), else `other`. Its
 /// state is `finished` when its record says so; else `running` when it had a
 /// turn in the last [`RUNNING_SECS`]; else `finished` for a session (a
-/// session records no end) and `partial` for a subagent, whose record never
-/// said it finished. Claude Code writes `finished` only once a run ends, so a
+/// session records no end); else `unknown` for a Codex subagent run, whose
+/// rollout marks the end of each task but never the end of the thread
+/// (tokensave2 #25); else `partial` for a subagent whose record never said
+/// it finished. Claude Code writes `finished` only once a run ends, so a
 /// stopped run cannot be told from one whose record was cut short, and
-/// `stopped` is never returned.
+/// `stopped` is never returned. The unfinished count of `/api/roles` leaves
+/// `unknown` out.
 ///
 /// `?8` is the row limit (`-1` for all) and `?9` the time a turn must be at
 /// or after for its run to be `running`.

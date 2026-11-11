@@ -62,6 +62,32 @@ fn line_type(value: &Value) -> Option<&str> {
     value.get("type").and_then(Value::as_str)
 }
 
+/// A line's `timestamp` as unix seconds, `0` when it has none.
+fn line_time(value: &Value) -> i64 {
+    value
+        .get("timestamp")
+        .and_then(Value::as_str)
+        .and_then(crate::accounting::parser::parse_timestamp)
+        .unwrap_or(0) as i64
+}
+
+/// The `meta` key set once every rollout's working folder was recorded.
+const PROJECT_DIRS_BACKFILLED: &str = "project_dirs_backfilled_codex";
+
+/// The working folder and time of a rollout's first `session_meta` line,
+/// `None` when the file cannot be read or its first line is not one.
+fn first_session_cwd(rollout: &Path) -> Option<(String, i64)> {
+    let file = fs::File::open(rollout).ok()?;
+    let mut line = String::new();
+    BufReader::new(file).read_line(&mut line).ok()?;
+    let value: Value = serde_json::from_str(line.trim()).ok()?;
+    if line_type(&value) != Some("session_meta") {
+        return None;
+    }
+    let cwd = value.pointer("/payload/cwd")?.as_str()?.to_string();
+    Some((cwd, line_time(&value)))
+}
+
 /// Updates `context` from a `session_meta` or `turn_context` line, and
 /// returns the subagent run a `session_meta` line describes.
 fn apply_context(context: &mut Context, value: &Value) -> Option<AgentRun> {
@@ -246,6 +272,18 @@ pub(crate) async fn ingest_dir(gdb: &GlobalDb, root: &Path) -> CodexIngestResult
     let mut tokens_consumed = 0u64;
     let mut lines_unparseable = 0u64;
     let mut compressed_skipped = 0u64;
+    // The buckets whose working folder is recorded, and whether every
+    // rollout still needs one read of its `session_meta` for it: a rollout
+    // ingested before schema version 3 is skipped below as unchanged, and
+    // its bucket is known only from that line (tokensave2 #26). One full
+    // pass records them all and sets the marker.
+    let mut dirs_known: std::collections::HashSet<String> = gdb
+        .project_dirs()
+        .await
+        .into_iter()
+        .map(|(hash, _)| hash)
+        .collect();
+    let backfill = !gdb.meta_flag(PROJECT_DIRS_BACKFILLED).await;
 
     for file_path in &files {
         if is_rollout(file_path, ".jsonl.zst") {
@@ -257,6 +295,14 @@ pub(crate) async fn ingest_dir(gdb: &GlobalDb, root: &Path) -> CodexIngestResult
         }
         sessions += 1;
         let path_str = file_path.to_string_lossy().to_string();
+        if backfill {
+            if let Some((cwd, seen)) = first_session_cwd(file_path) {
+                let hash = project_hash_of(Some(&cwd));
+                if !dirs_known.contains(&hash) && gdb.record_project_dir(&hash, &cwd, seen).await {
+                    dirs_known.insert(hash);
+                }
+            }
+        }
         let Ok(metadata) = fs::metadata(file_path) else {
             had_errors = true;
             continue;
@@ -338,9 +384,26 @@ pub(crate) async fn ingest_dir(gdb: &GlobalDb, root: &Path) -> CodexIngestResult
                             }
                             tokens_consumed += turn.input_tokens + turn.output_tokens;
                         }
-                    } else if let Some(run) = apply_context(&mut context, &value) {
-                        if !already_read {
-                            had_errors |= !gdb.upsert_agent_run(&run).await;
+                    } else {
+                        let is_meta = line_type(&value) == Some("session_meta");
+                        let run = apply_context(&mut context, &value);
+                        if is_meta {
+                            // The thread's working folder, so the dashboard
+                            // can name its bucket (tokensave2 #26).
+                            if let Some(cwd) = context.cwd.as_deref() {
+                                let hash = project_hash_of(Some(cwd));
+                                if !dirs_known.contains(&hash) {
+                                    let seen = line_time(&value);
+                                    if gdb.record_project_dir(&hash, cwd, seen).await {
+                                        dirs_known.insert(hash);
+                                    }
+                                }
+                            }
+                        }
+                        if let Some(run) = run {
+                            if !already_read {
+                                had_errors |= !gdb.upsert_agent_run(&run).await;
+                            }
                         }
                     }
                 }
@@ -350,6 +413,9 @@ pub(crate) async fn ingest_dir(gdb: &GlobalDb, root: &Path) -> CodexIngestResult
         if !read_failed {
             gdb.set_parse_offset(&path_str, offset, mtime).await;
         }
+    }
+    if backfill && !had_errors {
+        gdb.set_meta_flag(PROJECT_DIRS_BACKFILLED).await;
     }
 
     let state = if had_errors || compressed_skipped > 0 {
@@ -389,6 +455,43 @@ mod tests {
         let db_path = tmp.path().join(".tokensave").join("global.db");
         std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
         GlobalDb::open_at(&db_path).await.unwrap()
+    }
+
+    /// A rollout ingested before schema version 3 has its offset saved and
+    /// no working folder recorded: the next ingest skips it as unchanged but
+    /// still records the folder of its `session_meta`, once, and then sets
+    /// the marker so later ingests read only changed files (tokensave2 #26).
+    #[tokio::test]
+    async fn the_working_folder_of_an_already_ingested_rollout_is_recorded() {
+        let home = TempDir::new().unwrap();
+        let sessions = home.path().join("sessions").join("2026");
+        std::fs::create_dir_all(&sessions).unwrap();
+        let rollout = sessions.join("rollout-old.jsonl");
+        std::fs::write(
+            &rollout,
+            format!("{}\n", session_meta("T1", "T1", r#""exec""#, "main")),
+        )
+        .unwrap();
+        let db_tmp = TempDir::new().unwrap();
+        let gdb = open_test_db(&db_tmp).await;
+        let meta = std::fs::metadata(&rollout).unwrap();
+        let mtime = meta
+            .modified()
+            .unwrap()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        gdb.set_parse_offset(&rollout.to_string_lossy(), meta.len(), mtime)
+            .await;
+
+        let result = ingest_dir(&gdb, home.path()).await;
+
+        assert_eq!(result.turns_inserted, 0, "the rollout is unchanged");
+        assert_eq!(
+            gdb.project_dirs().await,
+            vec![("-work-repo-one".to_string(), "/work/repo.one".to_string())]
+        );
+        assert!(gdb.meta_flag(PROJECT_DIRS_BACKFILLED).await);
     }
 
     fn session_meta(id: &str, session_id: &str, source: &str, branch: &str) -> String {

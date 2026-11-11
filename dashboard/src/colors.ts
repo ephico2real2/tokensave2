@@ -38,7 +38,7 @@ export const tileOf = (color: string): string => `color-mix(in srgb, ${color} va
 
 export type Tone = 'none' | 'ok' | 'warn' | 'info' | 'stop';
 
-export const RUN_TONE: Record<RunState, Tone> = { finished: 'ok', running: 'info', stopped: 'stop', partial: 'warn' };
+export const RUN_TONE: Record<RunState, Tone> = { finished: 'ok', running: 'info', stopped: 'stop', partial: 'warn', unknown: 'none' };
 
 export const SOURCE_TONE: Record<SourceStatus, Tone> = {
   verified: 'ok',

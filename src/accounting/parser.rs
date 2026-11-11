@@ -217,6 +217,36 @@ pub(crate) fn parse_line(line: &str, project_hash: &str, session_id: &str) -> Op
     })
 }
 
+/// The first line with `cwd` of a Claude Code transcript, as the working
+/// folder and the line's time: the folder behind the file's project bucket.
+/// Every line of a transcript carries `cwd`, so the first lines are enough;
+/// `None` when the file cannot be read or none of its first lines has one.
+pub(crate) fn first_cwd(transcript: &Path) -> Option<(String, i64)> {
+    let file = fs::File::open(transcript).ok()?;
+    let reader = BufReader::new(file);
+    for line in reader.lines().take(FIRST_CWD_LINES).map_while(Result::ok) {
+        if !line.contains("\"cwd\"") {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        let Some(cwd) = v.get("cwd").and_then(Value::as_str) else {
+            continue;
+        };
+        let seen = v
+            .get("timestamp")
+            .and_then(Value::as_str)
+            .and_then(parse_timestamp)
+            .unwrap_or(0) as i64;
+        return Some((cwd.to_string(), seen));
+    }
+    None
+}
+
+/// Lines of a transcript read for its `cwd` before giving up.
+const FIRST_CWD_LINES: usize = 50;
+
 /// The [`TurnDetail`] of one assistant line: the outer object `v` and its
 /// `message.usage`. A key that is absent or `null` leaves its field `None`.
 fn turn_detail(v: &Value, usage: &Value) -> TurnDetail {
@@ -483,6 +513,16 @@ pub(crate) async fn ingest_claude_from_home(gdb: &GlobalDb, home: &Path) -> Inge
     pricing::reload_if_changed();
     let (files, mut had_errors) = find_session_files(home);
     let claude_sessions = files.len() as u64;
+    // The buckets whose working folder is recorded. A bucket not here gets
+    // one read of its transcript's first lines, whatever the saved offset,
+    // so the folders of transcripts ingested before schema version 3 are
+    // recorded too (tokensave2 #26).
+    let mut dirs_known: std::collections::HashSet<String> = gdb
+        .project_dirs()
+        .await
+        .into_iter()
+        .map(|(hash, _)| hash)
+        .collect();
 
     let mut total_inserted = 0u64;
     let mut total_cost = 0.0f64;
@@ -501,6 +541,15 @@ pub(crate) async fn ingest_claude_from_home(gdb: &GlobalDb, home: &Path) -> Inge
         {
             let (project_hash, _) = extract_path_parts(file_path);
             had_errors |= ingest_agent_run(gdb, file_path, &project_hash).await;
+        }
+
+        let (project_hash, session_id) = extract_path_parts(file_path);
+        if !dirs_known.contains(&project_hash) {
+            if let Some((cwd, seen)) = first_cwd(file_path) {
+                if gdb.record_project_dir(&project_hash, &cwd, seen).await {
+                    dirs_known.insert(project_hash.clone());
+                }
+            }
         }
 
         let Ok(meta) = fs::metadata(file_path) else {
@@ -532,8 +581,6 @@ pub(crate) async fn ingest_claude_from_home(gdb: &GlobalDb, home: &Path) -> Inge
         if seek_to == len && mtime == prev_mtime {
             continue;
         }
-
-        let (project_hash, session_id) = extract_path_parts(file_path);
 
         let Ok(f) = fs::File::open(file_path) else {
             had_errors = true;
@@ -1052,6 +1099,47 @@ mod tests {
         assert_eq!(
             run.description.unwrap().chars().count(),
             RUN_DESCRIPTION_MAX_CHARS
+        );
+    }
+
+    /// A transcript ingested before schema version 3 has its offset saved
+    /// and no working folder recorded: the next ingest skips it as unchanged
+    /// but still records its folder from its first lines (tokensave2 #26).
+    #[tokio::test]
+    async fn the_working_folder_of_an_already_ingested_transcript_is_recorded() {
+        let home = TempDir::new().unwrap();
+        let db_tmp = TempDir::new().unwrap();
+        let project = home
+            .path()
+            .join(".claude")
+            .join("projects")
+            .join("-work-alpha");
+        std::fs::create_dir_all(&project).unwrap();
+        let transcript = project.join("sess-2.jsonl");
+        std::fs::write(
+            &transcript,
+            format!(
+                "{{\"type\":\"user\",\"cwd\":\"/work/alpha\",\"timestamp\":\"2026-10-20T10:00:00.000Z\"}}\n{MAIN_LINE}\n"
+            ),
+        )
+        .unwrap();
+        let gdb = open_test_db(&db_tmp).await;
+        let meta = std::fs::metadata(&transcript).unwrap();
+        let mtime = meta
+            .modified()
+            .unwrap()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        gdb.set_parse_offset(&transcript.to_string_lossy(), meta.len(), mtime)
+            .await;
+
+        let stats = ingest_claude_from_home(&gdb, home.path()).await;
+
+        assert_eq!(stats.turns_inserted, 0, "the transcript is unchanged");
+        assert_eq!(
+            gdb.project_dirs().await,
+            vec![("-work-alpha".to_string(), "/work/alpha".to_string())]
         );
     }
 
