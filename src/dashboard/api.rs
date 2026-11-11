@@ -442,13 +442,18 @@ fn iso(unix_secs: i64) -> String {
 /// The repo name of each project-hash bucket: from the `projects` registry,
 /// else from the working folder the ingest recorded for the bucket
 /// (`project_dirs`). A database still at schema version 2 has no such
-/// table, and its buckets then keep their names from the registry only.
+/// table, and its buckets then keep their names from the registry only;
+/// any other failure of that query is answered as the error it is.
 async fn repo_names(db: &ReadOnlyDb) -> Result<HashMap<String, String>, ApiError> {
-    let dirs = rows(db, sql::PROJECT_DIRS, Vec::new(), |row| {
+    let dirs = match rows(db, sql::PROJECT_DIRS, Vec::new(), |row| {
         Ok((text(row, 0)?, text(row, 1)?))
     })
     .await
-    .unwrap_or_default();
+    {
+        Ok(dirs) => dirs,
+        Err(error) if error.message.contains("no such table: project_dirs") => Vec::new(),
+        Err(error) => return Err(error),
+    };
     let mut names: HashMap<String, String> = dirs
         .into_iter()
         .map(|(hash, path)| (hash, repo_name(&path)))

@@ -563,6 +563,61 @@ async fn a_session_outside_the_registry_is_named_by_its_recorded_folder() {
     assert_eq!(s9["name"], "repo · session", "{s9}");
 }
 
+/// A database still at schema version 2 has no `project_dirs` table: the
+/// runs are named from the registry and the hashes, and nothing fails.
+#[tokio::test]
+async fn a_database_without_project_dirs_still_names_its_runs() {
+    let fx = fixture().await;
+    let db = libsql::Builder::new_local(&fx.db_path)
+        .build()
+        .await
+        .unwrap();
+    let conn = db.connect().unwrap();
+    conn.execute("DROP TABLE project_dirs", ()).await.unwrap();
+    let (port, _stop) = serve(&fx, PAGE).await;
+    let top = get_json(port, "/api/runs/top?range=45").await;
+    let s9 = top
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|run| run["id"] == "S9")
+        .unwrap_or_else(|| panic!("S9 is not listed: {top}"));
+    assert_eq!(s9["repo"], fx.hash(Repo::Elsewhere), "{s9}");
+    let runs = get_json(port, "/api/runs?range=45").await;
+    assert!(
+        runs.as_array().unwrap().iter().any(|run| run["id"] == "S9"),
+        "{runs}"
+    );
+}
+
+/// Only the missing table is tolerated: a `project_dirs` the query cannot
+/// read (here, without its `path` column) is an error the API reports.
+#[tokio::test]
+async fn a_broken_project_dirs_table_is_an_error() {
+    let fx = fixture().await;
+    let db = libsql::Builder::new_local(&fx.db_path)
+        .build()
+        .await
+        .unwrap();
+    let conn = db.connect().unwrap();
+    conn.execute_batch(
+        "DROP TABLE project_dirs;
+         CREATE TABLE project_dirs (project_hash TEXT PRIMARY KEY)",
+    )
+    .await
+    .unwrap();
+    let (port, _stop) = serve(&fx, PAGE).await;
+    for path in ["/api/runs/top?range=45", "/api/runs?range=45"] {
+        let reply = get(port, path).await;
+        assert_eq!(reply.status, 500, "{path}: {}", reply.body);
+        assert!(
+            reply.body.contains("no such column: path"),
+            "{path}: {}",
+            reply.body
+        );
+    }
+}
+
 /// A repo path that is absolute on this platform and holds no turn.
 #[cfg(not(windows))]
 const NOWHERE: &str = "/nowhere";
